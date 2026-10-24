@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Estadísticas de Señal · UTN FRT Comunicación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="estilos.css">
+<style>
+  .filtros {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+    gap: 12px;
+    align-items: flex-end;
+  }
+  .acciones-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .acciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .graficos {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  @media (min-width: 920px) {
+    .graficos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  .lienzo {
+    position: relative;
+    height: 280px;
+    padding-top: 6px;
+  }
+  #mapa {
+    height: 380px;
+    border-radius: 8px;
+    border: 1px solid var(--line-strong);
+  }
+  .leyenda {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font: 600 0.78rem/1.2 var(--font-mono);
+    color: var(--fg-secondary);
+    padding: 8px 12px;
+    background: var(--surface-alt);
+    border-radius: 6px;
+    border: 1px solid var(--line);
+  }
+  .leyenda span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .leyenda i {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    display: inline-block;
+    border: 1px solid rgba(15, 23, 42, 0.25);
+  }
+  tr.ejemplo td {
+    color: var(--muted);
+  }
+  .teoria-controles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 14px;
+    align-items: flex-end;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .ecuacion-pill {
+    font: 600 0.86rem/1.45 var(--font-mono);
+    color: var(--fg);
+    padding: 10px 0;
+  }
+
+  /* Modo en vivo para proyección en aula */
+  .vivo {
+    border: 1px solid var(--accent);
+    background: var(--surface-elevated);
+  }
+  .vivo-grid {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 28px;
+    align-items: center;
+  }
+  @media (max-width: 720px) {
+    .vivo-grid {
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: center;
+    }
+  }
+  #qr {
+    background: #FFFFFF;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid var(--line-strong);
+    line-height: 0;
+  }
+  #qr img, #qr canvas {
+    width: 240px;
+    height: 240px;
+    max-width: 100%;
+  }
+  .vivo-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .vivo h2 {
+    font: 800 clamp(1.35rem, 2.6vw, 2rem)/1.12 var(--font-display);
+    text-wrap: balance;
+  }
+  .vivo-url {
+    font: 600 0.92rem/1.35 var(--font-mono);
+    color: var(--accent);
+    word-break: break-all;
+    padding: 6px 10px;
+    background: var(--accent-soft);
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    width: fit-content;
+  }
+  .vivo-cuenta {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .vivo-cuenta b {
+    font: 700 2.8rem/1 var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+  }
+  .en-vivo {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font: 700 0.78rem/1.35 var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--bad);
+    background: var(--bad-soft);
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--bad);
+  }
+  .en-vivo::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--bad);
+  }
+  #feed {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  #feed li {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 13px;
+    background: var(--surface-alt);
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  #feed li.nuevo {
+    border-color: var(--good);
+    background: var(--good-soft);
+    animation: entra 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  #feed li .vel {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  @keyframes entra {
+    from { transform: translateY(-6px); opacity: 0; }
+    to { transform: none; opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap ancho">
+  <header class="top">
+    <div class="top-brand">
+      <span class="inst-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
+        UTN FRT · Comunicación
+      </span>
+      <h1>Estadísticas de las mediciones</h1>
+    </div>
+    <div class="top-controls">
+      <nav class="mode-tabs" aria-label="Navegación principal">
+        <a class="mode-tab" href="index.html">Medidor</a>
+        <a class="mode-tab active" href="estadisticas.html" aria-current="page">Estadísticas</a>
+      </nav>
+      <button type="button" class="theme-btn" id="btnTema" aria-label="Alternar tema de color">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        <span id="txtTema">Tema</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="aviso" class="aviso" hidden></div>
+
+  <section class="card vivo" id="panelVivo" hidden aria-labelledby="t-vivo">
+    <div class="vivo-grid">
+      <div id="qr" aria-label="Código QR para abrir la app de medición"></div>
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <div class="vivo-head">
+          <h2 id="t-vivo">Escaneá el código y medí tu conexión</h2>
+          <span class="en-vivo">En vivo · ciclo 8 s</span>
+        </div>
+        <div class="vivo-url" id="vivoUrl"></div>
+        <div id="vivoAvisoLocal" class="aviso error small" hidden>
+          El código apunta a esta computadora (localhost), así que los celulares no van a poder abrirlo. Para la presentación en el aula, alojá la carpeta en GitHub Pages o en tu red local.
+        </div>
+        <div class="vivo-cuenta"><b id="vivoN">0</b><span class="muted">mediciones recibidas en la sesión</span></div>
+        <ul id="feed" aria-live="polite"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-label="Filtros y controles de corte">
+    <div class="filtros">
+      <div class="campo">
+        <label for="fConexion">Conexión</label>
+        <select id="fConexion">
+          <option value="">Todas</option>
+          <option value="WiFi">WiFi</option>
+          <option value="Datos móviles">Datos móviles</option>
+          <option value="Cable">Cable (Ethernet)</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="fEmpresa">Empresa</label>
+        <select id="fEmpresa"><option value="">Todas</option></select>
+      </div>
+      <div class="campo">
+        <label for="fVariable">Agrupar por</label>
+        <select id="fVariable">
+          <option value="empresa">Empresa</option>
+          <option value="conexion">Conexión (WiFi / datos)</option>
+          <option value="tecnologia">Tecnología (4G / 5G…)</option>
+          <option value="so">Sistema operativo</option>
+          <option value="marca">Marca</option>
+          <option value="lugar">Lugar (interior / exterior)</option>
+          <option value="origen">Origen (web / Android / PC)</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="fMetrica">Medida analizada</label>
+        <select id="fMetrica">
+          <option value="bajada_mbps">Velocidad de bajada (Mbps)</option>
+          <option value="subida_mbps">Velocidad de subida (Mbps)</option>
+          <option value="latencia_ms">Latencia (ms)</option>
+          <option value="jitter_ms">Jitter (ms)</option>
+          <option value="senal_dbm">Señal (dBm)</option>
+        </select>
+      </div>
+    </div>
+    <div class="acciones-bar">
+      <div class="acciones">
+        <button id="btnVivo" class="primario" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M21 21v.01"/><path d="M12 7v3a2 2 0 0 1-2 2H7"/><path d="M3 12h.01"/><path d="M12 3h.01"/><path d="M12 16v.01"/><path d="M16 12h1"/><path d="M21 12v.01"/><path d="M12 21v-1"/></svg>
+          <span id="txtBtnVivo">Modo en vivo (QR)</span>
+        </button>
+        <button id="btnActualizar" type="button">Actualizar datos</button>
+        <button id="btnCSV" type="button">Descargar CSV</button>
+      </div>
+      <div class="acciones">
+        <button id="btnEjemplo" class="subtle" type="button" hidden>Simular +60 mediciones</button>
+        <button id="btnBorrarEjemplo" class="subtle" type="button" hidden>Quitar simulación</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="kpis" aria-label="Resumen general">
+    <div class="metrica"><div class="k">Mediciones</div><div class="v" id="kN">0</div><div class="u">registros activos</div></div>
+    <div class="metrica"><div class="k">Bajada media</div><div class="v" id="kBajada">—</div><div class="u">Mbps</div></div>
+    <div class="metrica"><div class="k">Subida media</div><div class="v" id="kSubida">—</div><div class="u">Mbps</div></div>
+    <div class="metrica"><div class="k">Latencia media</div><div class="v" id="kLat">—</div><div class="u">ms</div></div>
+    <div class="metrica"><div class="k">Por datos móviles</div><div class="v" id="kDatos">—</div><div class="u">% del total</div></div>
+  </section>
+
+  <section class="card" aria-labelledby="t-resumen">
+    <div class="card-head">
+      <h2 id="t-resumen">Medidas estadísticas por grupo</h2>
+      <span class="card-meta" id="metaResumen">Estadística descriptiva muestral</span>
+    </div>
+    <div class="scroll-x"><table id="tablaResumen"></table></div>
+    <p class="small muted" style="margin:0">Desvío = desvío estándar muestral (<i>s</i>). Los grupos con menos de 5 mediciones son orientativos.</p>
+  </section>
+
+  <div class="graficos">
+    <section class="card">
+      <div class="card-head"><h2 id="tGrupo">Promedio por grupo</h2><span class="card-meta">Comparativa media</span></div>
+      <div class="lienzo"><canvas id="gGrupo"></canvas></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2 id="tHist">Distribución de frecuencias</h2><span class="card-meta">Histograma (8 intervalos)</span></div>
+      <div class="lienzo"><canvas id="gHist"></canvas></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Sistemas operativos</h2><span class="card-meta">Participación por plataforma</span></div>
+      <div class="lienzo"><canvas id="gSO"></canvas></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Marcas de dispositivos</h2><span class="card-meta">Equipos registrados</span></div>
+      <div class="lienzo"><canvas id="gMarca"></canvas></div>
+    </section>
+  </div>
+
+  <section class="card" aria-labelledby="t-teoria">
+    <div class="card-head">
+      <h2 id="t-teoria">Relación con la teoría de la cátedra (Unidades 3, 5 y 7)</h2>
+      <span class="card-meta">Johnson-Nyquist · RSRP · Límite de Shannon-Hartley</span>
+    </div>
+    <div class="teoria-controles">
+      <div class="campo">
+        <label for="tB">Ancho de banda del canal B (MHz)</label>
+        <input id="tB" type="number" min="1" max="400" value="20">
+      </div>
+      <div class="campo">
+        <label for="tT">Temperatura ambiente T (°C)</label>
+        <input id="tT" type="number" min="-20" max="60" value="25">
+      </div>
+      <div class="ecuacion-pill" id="tRuido"></div>
+    </div>
+    <div class="graficos">
+      <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+        <div class="card-head" style="padding-bottom:6px">
+          <h2>Señal (dBm) vs. Velocidad de bajada + Curva de Shannon</h2>
+        </div>
+        <div class="lienzo"><canvas id="gDisp"></canvas></div>
+        <p class="small muted" id="tPearson" style="margin:0"></p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+        <div>
+          <div class="card-head" style="padding-bottom:6px;margin-bottom:8px">
+            <h2>Capacidad de Shannon: C = B · log₂(1 + S/N)</h2>
+          </div>
+          <div class="scroll-x"><table id="tablaShannon"></table></div>
+        </div>
+        <div>
+          <div class="card-head" style="padding-bottom:6px;margin-bottom:8px">
+            <h2>Velocidad medida vs. máximo teórico por generación (Unidad 7)</h2>
+          </div>
+          <div class="scroll-x"><table id="tablaTec"></table></div>
+        </div>
+      </div>
+    </div>
+    <p class="small muted" style="margin:0">
+      En datos móviles (4G/5G), Android reporta RSRP (potencia de una subportadora de 15 kHz); para obtener la relación señal a ruido se integra la potencia del canal completo mediante <code>S = RSRP + 10·log₁₀(12 · 5 · B)</code>.
+      El modelo base considera ruido térmico puro (<code>N = k·T·B</code>) sin figura de ruido del receptor ni interferencia co-canal, por lo que <i>C</i> representa la cota superior física.
+    </p>
+  </section>
+
+  <section class="card" aria-labelledby="t-mapa">
+    <div class="card-head">
+      <h2 id="t-mapa">Cartografía de mediciones (San Miguel de Tucumán)</h2>
+      <span class="card-meta" id="metaMapa">Georreferenciación por intensidad de bajada</span>
+    </div>
+    <div id="mapa"></div>
+    <div class="leyenda">
+      <span><i style="background:#B93829"></i>menos de 5 Mbps (Crítico)</span>
+      <span><i style="background:#C27803"></i>5 a 20 Mbps (Moderado)</span>
+      <span><i style="background:#117A43"></i>20 a 100 Mbps (Óptimo)</span>
+      <span><i style="background:#1849C6"></i>más de 100 Mbps (Alta capacidad)</span>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="t-tabla">
+    <div class="card-head">
+      <h2 id="t-tabla">Registro completo de telemetría</h2>
+      <span class="card-meta" id="metaTabla">Orden cronológico inverso</span>
+    </div>
+    <div class="scroll-x"><table id="tablaDatos"></table></div>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="config.js"></script>
+<script src="teoria.js"></script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const CFG = window.CONFIG;
+const NUMS = ["bajada_mbps", "subida_mbps", "latencia_ms", "jitter_ms", "senal_dbm", "barras", "lat", "lon", "precision_m", "sinr_db", "ancho_mhz"];
+const ETIQ = {
+  bajada_mbps: "Bajada (Mbps)",
+  subida_mbps: "Subida (Mbps)",
+  latencia_ms: "Latencia (ms)",
+  jitter_ms: "Jitter (ms)",
+  senal_dbm: "Señal (dBm)",
+};
+let datos = [];
+const graficos = {};
+let mapa, capa;
+
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const SERIE = ["#1849C6", "#117A43", "#C27803", "#7C3AED", "#B93829", "#0891B2", "#475569", "#9A3412"];
+
+// ---------- Gestión de Tema (Claro / Oscuro) ----------
+function aplicarTema(t) {
+  if (t === "dark" || t === "light") {
+    document.documentElement.setAttribute("data-theme", t);
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  const esOscuro = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  $("txtTema").textContent = esOscuro ? "Oscuro" : "Claro";
+  if (datos.length) render();
+}
+function alternarTema() {
+  const actual = document.documentElement.getAttribute("data-theme");
+  const prefOscuro = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const esOscuro = actual === "dark" || (!actual && prefOscuro);
+  const nuevo = esOscuro ? "light" : "dark";
+  try { localStorage.setItem("utn_tema", nuevo); } catch (e) {}
+  aplicarTema(nuevo);
+}
+try {
+  const guardado = localStorage.getItem("utn_tema");
+  if (guardado) aplicarTema(guardado);
+  else aplicarTema(null);
+} catch (e) {}
+$("btnTema").addEventListener("click", alternarTema);
+
+// ---------- Carga y Sanitización de Datos ----------
+function normalizar(f) {
+  const r = { ...f };
+  for (const k of NUMS) {
+    r[k] = r[k] === "" || r[k] == null ? null : Number(r[k]);
+  }
+  r.version_so = window.TEORIA.limpiarVersionSO(r.version_so);
+  return r;
+}
+
+function leerLocal() {
+  try {
+    const crudo = localStorage.getItem("mediciones");
+    if (crudo) {
+      const parsed = JSON.parse(crudo);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    if (Array.isArray(window.SEMILLA_INICIAL) && window.SEMILLA_INICIAL.length) {
+      localStorage.setItem("mediciones", JSON.stringify(window.SEMILLA_INICIAL));
+      return window.SEMILLA_INICIAL;
+    }
+    return [];
+  } catch (e) {
+    return window.SEMILLA_INICIAL || [];
+  }
+}
+
+function escribirLocal(lista) {
+  try { localStorage.setItem("mediciones", JSON.stringify(lista)); } catch (e) { /* sin almacenamiento */ }
+}
+
+async function cargar() {
+  const aviso = $("aviso");
+  let conectadoBackend = false;
+  if (CFG.SCRIPT_URL) {
+    try {
+      const sep = CFG.SCRIPT_URL.includes("?") ? "&" : "?";
+      const r = await fetch(CFG.SCRIPT_URL + sep + "r=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      datos = (j.filas || []).map(normalizar);
+      conectadoBackend = true;
+      escribirLocal(datos);
+      aviso.hidden = true;
+    } catch (e) {
+      datos = leerLocal().map(normalizar);
+      aviso.hidden = false;
+      aviso.className = "aviso error";
+      aviso.textContent = "No se pudo leer la planilla compartida. Se muestran las mediciones guardadas en este navegador.";
+    }
+    const esEndpointLocal = CFG.SCRIPT_URL.startsWith("/");
+    const hayEjemplo = datos.some(esEjemplo);
+    $("btnEjemplo").hidden = !esEndpointLocal || hayEjemplo;
+    $("btnBorrarEjemplo").hidden = !esEndpointLocal || !hayEjemplo;
+  } else {
+    datos = leerLocal().map(normalizar);
+    aviso.hidden = false;
+    aviso.className = "aviso";
+    aviso.innerHTML = "<b>Modo Laboratorio Autónomo:</b> Los registros se almacenan en este navegador (incluye dataset base UTN FRT).";
+    const hayEjemplo = datos.some(esEjemplo);
+    $("btnEjemplo").hidden = hayEjemplo;
+    $("btnBorrarEjemplo").hidden = !hayEjemplo;
+  }
+  $("btnEjemplo").dataset.backend = conectadoBackend ? "1" : "";
+  $("btnBorrarEjemplo").dataset.backend = conectadoBackend ? "1" : "";
+
+  const empresas = [...new Set(datos.map((d) => d.empresa).filter(Boolean))].sort();
+  const sel = $("fEmpresa"), actual = sel.value;
+  sel.innerHTML = '<option value="">Todas</option>' + empresas.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join("");
+  sel.value = empresas.includes(actual) ? actual : "";
+  render();
+  actualizarVivo();
+}
+
+// ---------- Modo en vivo (presentación en aula) ----------
+let vivoTimer = null, qrHecho = false;
+const idsVistos = new Set();
+
+function describir(d) {
+  const equipo = d.nombre_dispositivo || [d.marca, d.modelo].filter(Boolean).join(" ") || d.tipo_dispositivo || "Equipo";
+  const red = [d.conexion, d.tecnologia].filter(Boolean).join(" · ");
+  const dbmTxt = d.senal_dbm != null ? ` · ${fmt(d.senal_dbm, 0)} dBm` : "";
+  return `<span><b>${esc(equipo)}</b> · ${esc(d.empresa || "?")} · ${esc(red)}${esc(dbmTxt)}</span><span class="vel">${fmt(d.bajada_mbps)} Mbps</span>`;
+}
+
+function actualizarVivo() {
+  const nuevos = datos.filter((d) => !idsVistos.has(d.id));
+  const habiaDatos = idsVistos.size > 0;
+  datos.forEach((d) => idsVistos.add(d.id));
+  if ($("panelVivo").hidden) return;
+  $("vivoN").textContent = datos.length;
+  const feed = $("feed");
+  if (!feed.children.length) {
+    [...datos].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 5)
+      .forEach((d) => {
+        const li = document.createElement("li");
+        li.innerHTML = describir(d);
+        feed.appendChild(li);
+      });
+  } else if (habiaDatos) {
+    for (const d of nuevos) {
+      const li = document.createElement("li");
+      li.className = "nuevo";
+      li.innerHTML = describir(d);
+      feed.prepend(li);
+    }
+    while (feed.children.length > 6) feed.lastChild.remove();
+  }
+}
+
+function alternarVivo() {
+  const panel = $("panelVivo");
+  panel.hidden = !panel.hidden;
+  $("txtBtnVivo").textContent = panel.hidden ? "Modo en vivo (QR)" : "Cerrar modo en vivo";
+  if (panel.hidden) {
+    clearInterval(vivoTimer);
+    vivoTimer = null;
+    return;
+  }
+  const url = new URL("index.html", location.href).href;
+  $("vivoUrl").textContent = url;
+  $("vivoAvisoLocal").hidden = !/^(localhost|127\.|\[::1\])/.test(location.hostname);
+  if (!qrHecho && window.QRCode) {
+    new QRCode($("qr"), {
+      text: url,
+      width: 240,
+      height: 240,
+      colorDark: "#0F172A",
+      colorLight: "#FFFFFF",
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+    qrHecho = true;
+  }
+  $("feed").innerHTML = "";
+  actualizarVivo();
+  vivoTimer = setInterval(cargar, 8000);
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---------- Simulación de 60 mediciones ----------
+const esEjemplo = (d) => String(d.comentario || "").startsWith("DATO DE EJEMPLO");
+function generarEjemplo(n = 60) {
+  const azar = (a, b) => a + Math.random() * (b - a);
+  const elegir = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const equipos = [
+    ["Samsung", "Galaxy A54 5G", "Android"],
+    ["Samsung", "Galaxy A14", "Android"],
+    ["Motorola", "Moto G54", "Android"],
+    ["Motorola", "Edge 40", "Android"],
+    ["Xiaomi", "Redmi Note 13", "Android"],
+    ["Apple", "iPhone 14", "iOS"],
+    ["Apple", "iPhone 15", "iOS"],
+  ];
+  const base = { Personal: 1.0, Claro: 1.12, Movistar: 0.85 };
+  const lista = [];
+  for (let i = 0; i < n; i++) {
+    const [marca, modelo, so] = elegir(equipos);
+    const empresa = elegir(["Personal", "Claro", "Movistar"]);
+    const wifi = Math.random() < 0.42;
+    const tec = wifi ? "802.11ac" : (Math.random() < 0.22 ? "5G" : Math.random() < 0.88 ? "4G" : "3G");
+    const dbm = wifi ? Math.round(azar(-79, -49)) : Math.round(azar(-115, -76));
+    const factorSenal = wifi
+      ? Math.min(1.25, Math.max(0.2, (dbm + 88) / 32))
+      : Math.min(1.2, Math.max(0.08, (dbm + 120) / 38)) * azar(0.65, 1.25);
+    const bajada = (wifi ? azar(25, 210) : (tec === "5G" ? azar(140, 340) : tec === "4G" ? azar(18, 78) : azar(1.5, 7)) * base[empresa]) * factorSenal;
+    lista.push({
+      id: "ejemplo-" + i,
+      fecha: new Date(Date.now() - azar(0, 7 * 864e5)).toISOString(),
+      tipo_dispositivo: "Celular",
+      nombre_dispositivo: Math.random() < 0.5 ? `${modelo} #${i + 1}` : "",
+      marca,
+      modelo,
+      so,
+      version_so: so === "iOS" ? "18.1" : String(Math.round(azar(12, 15))),
+      navegador: so === "iOS" ? "Safari" : "Chrome",
+      conexion: wifi ? "WiFi" : "Datos móviles",
+      tecnologia: tec,
+      tipo_red_detectado: "",
+      empresa,
+      isp_detectado: "",
+      asn: "",
+      bajada_mbps: +bajada.toFixed(2),
+      subida_mbps: +(bajada * azar(0.18, 0.52)).toFixed(2),
+      latencia_ms: +(wifi ? azar(9, 36) : azar(24, 92)).toFixed(1),
+      jitter_ms: +azar(1.2, 16).toFixed(1),
+      senal_dbm: dbm,
+      barras: Math.max(0, Math.min(4, Math.round((dbm + (wifi ? 90 : 120)) / 10))),
+      lugar: elegir(["Interior", "Exterior"]),
+      lat: +(-26.825 + azar(-0.032, 0.032)).toFixed(5),
+      lon: +(-65.215 + azar(-0.032, 0.032)).toFixed(5),
+      precision_m: Math.round(azar(6, 35)),
+      ubicacion_fuente: "GPS",
+      ciudad: "San Miguel de Tucumán",
+      comentario: "DATO DE EJEMPLO (simulación estadística)",
+      sinr_db: null,
+      ancho_mhz: 20,
+      origen: "web",
+    });
+  }
+  return lista;
+}
+
+// ---------- Estadística Descriptiva ----------
+function resumen(vals) {
+  const v = vals.filter((x) => x != null && !Number.isNaN(x)).sort((a, b) => a - b);
+  const n = v.length;
+  if (!n) return { n: 0 };
+  const media = v.reduce((a, b) => a + b, 0) / n;
+  const mediana = n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
+  const desvio = n > 1 ? Math.sqrt(v.reduce((a, b) => a + (b - media) ** 2, 0) / (n - 1)) : 0;
+  return { n, media, mediana, desvio, min: v[0], max: v[n - 1] };
+}
+const fmt = (x, d = 1) => (x == null || Number.isNaN(x) ? "—" : x.toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d }));
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function filtrados() {
+  const c = $("fConexion").value, e = $("fEmpresa").value;
+  return datos.filter((d) => (!c || d.conexion === c) && (!e || d.empresa === e));
+}
+
+function agrupar(lista, campo) {
+  const g = {};
+  for (const d of lista) {
+    const k = d[campo] || "Sin dato";
+    (g[k] = g[k] || []).push(d);
+  }
+  return g;
+}
+
+// ---------- Renderizado Principal ----------
+function render() {
+  const lista = filtrados();
+  const variable = $("fVariable").value, metrica = $("fMetrica").value;
+  const nombreVar = $("fVariable").selectedOptions[0].textContent;
+
+  $("kN").textContent = lista.length;
+  $("kBajada").textContent = fmt(resumen(lista.map((d) => d.bajada_mbps)).media);
+  $("kSubida").textContent = fmt(resumen(lista.map((d) => d.subida_mbps)).media);
+  $("kLat").textContent = fmt(resumen(lista.map((d) => d.latencia_ms)).media, 0);
+  $("kDatos").textContent = lista.length ? fmt((100 * lista.filter((d) => d.conexion === "Datos móviles").length) / lista.length, 0) : "—";
+
+  // Tabla de medidas por grupo
+  const grupos = agrupar(lista, variable);
+  const filas = Object.entries(grupos)
+    .map(([k, arr]) => [k, resumen(arr.map((d) => d[metrica]))])
+    .sort((a, b) => (b[1].media ?? -1e9) - (a[1].media ?? -1e9));
+
+  $("metaResumen").textContent = `${ETIQ[metrica]} agrupado por ${nombreVar.toLowerCase()}`;
+  $("tablaResumen").innerHTML = `<thead><tr><th>${esc(nombreVar)}</th><th class="num">n</th><th class="num">Media</th><th class="num">Mediana</th><th class="num">Desvío</th><th class="num">Mín</th><th class="num">Máx</th></tr></thead>
+    <tbody>${filas.map(([k, r]) => `<tr><td><b>${esc(k)}</b></td><td class="num">${r.n}</td><td class="num">${fmt(r.media)}</td><td class="num">${fmt(r.mediana)}</td><td class="num">${fmt(r.desvio)}</td><td class="num">${fmt(r.min)}</td><td class="num">${fmt(r.max)}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">Todavía no hay mediciones para este filtro.</td></tr>'}</tbody>`;
+
+  // Gráficos
+  const conDatos = filas.filter(([, r]) => r.n);
+  $("tGrupo").textContent = `${ETIQ[metrica]}: promedio por ${nombreVar.toLowerCase()}`;
+  barras("gGrupo", conDatos.map(([k]) => k), conDatos.map(([, r]) => +r.media.toFixed(2)), ETIQ[metrica], true);
+
+  const vals = lista.map((d) => d[metrica]).filter((x) => x != null);
+  $("tHist").textContent = `Distribución: ${ETIQ[metrica].toLowerCase()}`;
+  const h = histograma(vals, 8);
+  barras("gHist", h.etiquetas, h.cuentas, "Cantidad de mediciones", false);
+
+  const cuenta = (campo) => Object.entries(agrupar(lista, campo)).map(([k, a]) => [k, a.length]).sort((a, b) => b[1] - a[1]);
+  const so = cuenta("so"), marca = cuenta("marca");
+  barras("gSO", so.map((x) => x[0]), so.map((x) => x[1]), "Cantidad", true);
+  barras("gMarca", marca.map((x) => x[0]), marca.map((x) => x[1]), "Cantidad", true);
+
+  teoria(lista);
+  dibujarMapa(lista);
+  tablaDatos(lista);
+}
+
+function teoria(lista) {
+  const T = window.TEORIA;
+  const B = parseFloat($("tB").value) || 20;
+  const temp = parseFloat($("tT").value);
+  const tC = Number.isNaN(temp) ? 25 : temp;
+  const ruido = T.ruidoTermicoDbm(B, tC);
+  $("tRuido").textContent = `Ruido térmico N = k·T·B = ${fmt(ruido)} dBm (${T.potenciaLegible(T.dbmAmW(ruido))}) a ${tC + 273} K`;
+
+  // Dispersión señal vs bajada + Curva de referencia Shannon + correlación de Pearson
+  const conSenal = lista.filter((d) => d.senal_dbm != null && d.bajada_mbps != null);
+  const r = T.pearson(conSenal.map((d) => d.senal_dbm), conSenal.map((d) => d.bajada_mbps));
+  $("tPearson").textContent = r == null
+    ? "Se requieren al menos 3 mediciones con intensidad en dBm para calcular el coeficiente de correlación lineal."
+    : `Coeficiente de correlación de Pearson r = ${fmt(r, 2)} (n = ${conSenal.length}). ` +
+      (Math.abs(r) < 0.3 ? "Correlación débil." : Math.abs(r) < 0.7 ? "Correlación moderada." : "Correlación fuerte.") +
+      (r > 0 ? " A mayor potencia recibida (dBm menos negativo), mayor caudal de bajada." : "");
+
+  const muted = css("--muted"), linea = css("--line"), fg = css("--fg"), accent = css("--accent");
+  if (graficos.gDisp) graficos.gDisp.destroy();
+  const empresas = [...new Set(conSenal.map((d) => d.empresa || "Sin dato"))];
+  const curvaRef = T.curvaShannon(B, tC, $("fConexion").value || "Datos móviles", -115, -50, 3);
+
+  const datasets = empresas.map((e, i) => ({
+    type: "scatter",
+    label: e,
+    backgroundColor: SERIE[i % SERIE.length],
+    borderColor: "#FFFFFF",
+    borderWidth: 1.5,
+    pointRadius: (ctx) => {
+      const v = ctx.raw?.y || 0;
+      return v > 120 ? 7 : v > 50 ? 5.5 : 4.5;
+    },
+    data: conSenal.filter((d) => (d.empresa || "Sin dato") === e).map((d) => ({ x: d.senal_dbm, y: d.bajada_mbps })),
+  }));
+
+  if (conSenal.length > 0) {
+    datasets.push({
+      type: "line",
+      label: `Tendencia teórica Shannon (${B} MHz)`,
+      data: curvaRef,
+      borderColor: accent,
+      borderDash: [5, 4],
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: false,
+      tension: 0.25,
+    });
+  }
+
+  graficos.gDisp = new Chart($("gDisp"), {
+    type: "scatter",
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: fg, font: { family: "Chivo, sans-serif", size: 12 } } },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: "Intensidad de Señal (dBm)", color: fg },
+          ticks: { color: muted, font: { family: "JetBrains Mono, monospace" } },
+          grid: { color: linea },
+        },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: "Velocidad de Bajada (Mbps)", color: fg },
+          ticks: { color: muted, font: { family: "JetBrains Mono, monospace" } },
+          grid: { color: linea },
+        },
+      },
+    },
+  });
+
+  // Shannon por empresa (solo mediciones con dBm)
+  const porEmp = agrupar(conSenal, "empresa");
+  const filasS = Object.entries(porEmp).map(([emp, arr]) => {
+    const bDe = (d) => (d.ancho_mhz != null ? d.ancho_mhz : B);
+    const snrs = arr.map((d) => (d.sinr_db != null ? d.sinr_db : T.snrDb(d.senal_dbm, bDe(d), tC, d.conexion)));
+    const dbm = resumen(arr.map((d) => d.senal_dbm)).media;
+    const snr = resumen(snrs).media;
+    const c = resumen(snrs.map((s, i) => T.shannonMbps(bDe(arr[i]), s))).media;
+    const med = resumen(arr.map((d) => d.bajada_mbps)).media;
+    const pct = (100 * med) / c;
+    return `<tr><td><b>${esc(emp)}</b></td><td class="num">${arr.length}</td><td class="num">${fmt(dbm)}</td><td class="num">${fmt(snr)}</td><td class="num">${fmt(c, 0)}</td><td class="num">${fmt(med)}</td><td class="num">${fmt(pct, 0)} %</td></tr>`;
+  });
+  $("tablaShannon").innerHTML = `<thead><tr><th>Empresa</th><th class="num">n</th><th class="num">Señal (dBm)</th><th class="num">SNR (dB)</th><th class="num">C Shannon (Mbps)</th><th class="num">Bajada real</th><th class="num">Eficiencia</th></tr></thead>
+    <tbody>${filasS.join("") || '<tr><td colspan="7" class="muted">Sin mediciones con señal en dBm para este filtro.</td></tr>'}</tbody>`;
+
+  // Tecnología vs máximo teórico (Unidad 7)
+  const movil = lista.filter((d) => d.conexion === "Datos móviles" && T.MAXIMOS[d.tecnologia]);
+  const filasT = ["2G", "3G", "4G", "5G"].map((tec) => {
+    const arr = movil.filter((d) => d.tecnologia === tec);
+    if (!arr.length) return "";
+    const s = resumen(arr.map((d) => d.bajada_mbps));
+    return `<tr><td><b>${esc(tec)}</b></td><td>${esc(T.MAXIMOS[tec].texto)}</td><td class="num">${arr.length}</td><td class="num">${fmt(s.media)}</td><td class="num">${fmt(s.max)}</td></tr>`;
+  });
+  $("tablaTec").innerHTML = `<thead><tr><th>Tec.</th><th>Máximo teórico (Unidad 7)</th><th class="num">n</th><th class="num">Bajada media</th><th class="num">Bajada máx.</th></tr></thead>
+    <tbody>${filasT.join("") || '<tr><td colspan="5" class="muted">Sin mediciones móviles con tecnología indicada.</td></tr>'}</tbody>`;
+}
+
+function histograma(vals, k) {
+  if (!vals.length) return { etiquetas: [], cuentas: [] };
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const ancho = (max - min) / k || 1;
+  const cuentas = new Array(k).fill(0);
+  for (const v of vals) cuentas[Math.min(k - 1, Math.floor((v - min) / ancho))]++;
+  const etiquetas = cuentas.map((_, i) => `${fmt(min + i * ancho, 0)}–${fmt(min + (i + 1) * ancho, 0)}`);
+  return { etiquetas, cuentas };
+}
+
+function barras(id, etiquetas, valores, nombre, multicolor) {
+  const fg = css("--fg"), muted = css("--muted"), linea = css("--line"), accent = css("--accent");
+  const colores = multicolor ? etiquetas.map((_, i) => SERIE[i % SERIE.length]) : accent;
+  if (graficos[id]) graficos[id].destroy();
+  graficos[id] = new Chart($(id), {
+    type: "bar",
+    data: {
+      labels: etiquetas,
+      datasets: [{ label: nombre, data: valores, backgroundColor: colores, borderRadius: 4 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (c) => `${nombre}: ${fmt(c.parsed.y, 1)}` } },
+      },
+      scales: {
+        x: { ticks: { color: muted, font: { family: "Chivo, sans-serif" } }, grid: { display: false } },
+        y: {
+          beginAtZero: true,
+          ticks: { color: muted, font: { family: "JetBrains Mono, monospace" } },
+          grid: { color: linea },
+          title: { display: true, text: nombre, color: fg },
+        },
+      },
+    },
+  });
+}
+
+function colorBajada(v) {
+  return v == null ? "#64748B" : v < 5 ? "#B93829" : v < 20 ? "#C27803" : v < 100 ? "#117A43" : "#1849C6";
+}
+
+function dibujarMapa(lista) {
+  if (!window.L) return;
+  if (!mapa) {
+    mapa = L.map("mapa").setView([-26.82, -65.21], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "© OpenStreetMap",
+    }).addTo(mapa);
+  }
+  if (capa) capa.remove();
+  capa = L.layerGroup().addTo(mapa);
+  const pts = [];
+  for (const d of lista) {
+    if (d.lat == null || d.lon == null) continue;
+    pts.push([d.lat, d.lon]);
+    const radio = d.bajada_mbps >= 100 ? 9 : d.bajada_mbps >= 20 ? 7.5 : 6;
+    L.circleMarker([d.lat, d.lon], {
+      radius: radio,
+      color: "#FFFFFF",
+      weight: 1.5,
+      fillColor: colorBajada(d.bajada_mbps),
+      fillOpacity: 0.92,
+    })
+      .bindPopup(
+        `<b>${esc(d.empresa || "?")}</b> · ${esc(d.conexion)} ${esc(d.tecnologia || "")}<br>` +
+        `Bajada <b>${fmt(d.bajada_mbps)} Mbps</b> · Subida ${fmt(d.subida_mbps)} Mbps<br>` +
+        `Latencia ${fmt(d.latencia_ms, 0)} ms${d.senal_dbm != null ? ` · Señal ${esc(d.senal_dbm)} dBm` : ""}<br>` +
+        `${d.nombre_dispositivo ? `<b>${esc(d.nombre_dispositivo)}</b> · ` : ""}${esc(d.marca)} ${esc(d.modelo)} · ${esc(d.so)} ${esc(d.version_so)}`
+      )
+      .addTo(capa);
+  }
+  $("metaMapa").textContent = `${pts.length} puntos georreferenciados`;
+  if (pts.length) mapa.fitBounds(pts, { padding: [32, 32], maxZoom: 15 });
+}
+
+function tablaDatos(lista) {
+  const cols = [
+    ["fecha", "Fecha"],
+    ["conexion", "Conexión"],
+    ["tecnologia", "Tec."],
+    ["empresa", "Empresa"],
+    ["nombre_dispositivo", "Dispositivo"],
+    ["marca", "Marca"],
+    ["modelo", "Modelo"],
+    ["so", "SO"],
+    ["bajada_mbps", "Bajada (Mbps)"],
+    ["subida_mbps", "Subida (Mbps)"],
+    ["latencia_ms", "Latencia (ms)"],
+    ["senal_dbm", "Señal (dBm)"],
+    ["sinr_db", "SINR (dB)"],
+    ["origen", "Origen"],
+    ["ubicacion_fuente", "Ubicación"],
+  ];
+  const ord = [...lista].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  $("metaTabla").textContent = `${ord.length} registros mostrados`;
+  $("tablaDatos").innerHTML = `<thead><tr>${cols.map(([k, t]) => `<th class="${NUMS.includes(k) ? "num" : ""}">${esc(t)}</th>`).join("")}</tr></thead>
+    <tbody>${ord.map((d) => `<tr class="${esEjemplo(d) ? "ejemplo" : ""}">${cols.map(([k]) => {
+      let v = d[k];
+      if (k === "fecha") {
+        v = v ? new Date(v).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }) + (esEjemplo(d) ? " (sim.)" : "") : "";
+      } else if (k === "so") {
+        v = [d.so, d.version_so].filter(Boolean).join(" ");
+      }
+      return NUMS.includes(k)
+        ? `<td class="num">${v == null ? "—" : fmt(v, k === "senal_dbm" || k === "latencia_ms" ? 0 : 1)}</td>`
+        : `<td>${esc(v)}</td>`;
+    }).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="muted">Sin mediciones registradas.</td></tr>`}</tbody>`;
+}
+
+function descargarCSV() {
+  const lista = filtrados();
+  const celda = (v) => {
+    const s = v == null ? "" : String(v);
+    return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lineas = [window.CAMPOS.join(";")].concat(
+    lista.map((d) =>
+      window.CAMPOS.map((c) => {
+        const v = d[c];
+        return celda(typeof v === "number" ? String(v).replace(".", ",") : v);
+      }).join(";")
+    )
+  );
+  const blob = new Blob(["\uFEFF" + lineas.join("\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `mediciones-senal-utn-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+["fConexion", "fEmpresa", "fVariable", "fMetrica"].forEach((id) => $(id).addEventListener("change", render));
+["tB", "tT"].forEach((id) => $(id).addEventListener("input", () => teoria(filtrados())));
+$("btnActualizar").addEventListener("click", cargar);
+$("btnVivo").addEventListener("click", alternarVivo);
+if (location.hash === "#vivo") setTimeout(alternarVivo, 300);
+window.addEventListener("storage", (e) => {
+  if (e.key === "mediciones" && !CFG.SCRIPT_URL) cargar();
+});
+$("btnCSV").addEventListener("click", descargarCSV);
+$("btnEjemplo").addEventListener("click", async () => {
+  const lote = generarEjemplo();
+  if ($("btnEjemplo").dataset.backend === "1" && CFG.SCRIPT_URL.startsWith("/")) {
+    try {
+      await fetch(CFG.SCRIPT_URL + "?accion=lote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "lote", filas: lote }),
+      });
+    } catch (e) {}
+  } else {
+    escribirLocal(leerLocal().concat(lote));
+  }
+  cargar();
+});
+$("btnBorrarEjemplo").addEventListener("click", async () => {
+  if ($("btnBorrarEjemplo").dataset.backend === "1" && CFG.SCRIPT_URL.startsWith("/")) {
+    try {
+      await fetch(CFG.SCRIPT_URL + "?accion=limpiar-simulacion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "limpiar-simulacion" }),
+      });
+    } catch (e) {}
+  } else {
+    escribirLocal(leerLocal().filter((d) => !esEjemplo(d)));
+  }
+  cargar();
+});
+cargar();
+</script>
+</body>
+</html>

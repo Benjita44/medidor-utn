@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Medidor de Señal · UTN FRT Comunicación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <div class="top-brand">
+      <span class="inst-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
+        UTN FRT · Comunicación
+      </span>
+      <h1>Medidor de Señal</h1>
+    </div>
+    <div class="top-controls">
+      <nav class="mode-tabs" aria-label="Navegación principal">
+        <a class="mode-tab active" href="index.html" aria-current="page">Medidor</a>
+        <a class="mode-tab" href="estadisticas.html">Estadísticas</a>
+      </nav>
+      <button type="button" class="theme-btn" id="btnTema" aria-label="Alternar tema de color">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        <span id="txtTema">Tema</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="avisoAndroid" class="aviso" hidden>
+    <b>¿Estás en Android?</b> Podés usar la app nativa de laboratorio para leer directamente del módem celular la señal real en dBm (RSRP) y la SINR.
+    <a href="MedidorSenal-UTN.apk" download>Descargar APK para Android</a>
+  </div>
+
+  <div id="modoDemo" class="aviso" hidden>
+    <b>Modo Laboratorio Autónomo:</b> Las mediciones que registres se guardan directamente en este navegador y aparecen al instante en la pestaña <a href="estadisticas.html">Estadísticas</a>.
+  </div>
+
+  <section class="card" aria-labelledby="t-disp">
+    <div class="card-head">
+      <h2 id="t-disp">Telemetría del dispositivo y red</h2>
+      <span class="card-meta">Detección automática de entorno</span>
+    </div>
+    <div class="chips" id="chips">
+      <span class="chip"><span class="dot" id="dotConexion"></span><b id="chipConexion">Detectando…</b></span>
+      <span class="chip">Equipo: <b id="chipEquipo">…</b></span>
+      <span class="chip">Sistema: <b id="chipSO">…</b></span>
+      <span class="chip">Proveedor IP: <b id="chipISP">…</b></span>
+    </div>
+    <p class="small muted" style="margin:0">
+      El navegador identifica automáticamente tu plataforma y proveedor por IP pública. Podés verificar o completar los parámetros técnicos en el formulario inferior antes de guardar.
+    </p>
+  </section>
+
+  <section class="card" aria-labelledby="t-med">
+    <div class="card-head">
+      <h2 id="t-med">Instrumento de medición de caudal y latencia</h2>
+      <span class="card-meta">Escala logarítmica 0 – 1000 Mbps</span>
+    </div>
+    <div class="gauge">
+      <svg id="gauge" viewBox="0 0 340 196" role="img" aria-label="Velocidad actual en megabits por segundo"></svg>
+      <div class="valor" id="gValor">0.0</div>
+      <div class="fase" id="gFase">Mbps · listo para medir</div>
+    </div>
+    <button class="primario" id="btnMedir" type="button">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+      <span id="txtBtnMedir">Iniciar medición</span>
+    </button>
+    <p class="small muted" style="margin:0">
+      La prueba transfiere bloques progresivos de entre 10 y 40 MB contra servidores de baja latencia (Cloudflare). Tenelo en cuenta si operás con plan de datos móviles limitado.
+    </p>
+    <div class="metricas">
+      <div class="metrica"><div class="k">Bajada</div><div class="v" id="mBajada">—</div><div class="u">Mbps</div></div>
+      <div class="metrica"><div class="k">Subida</div><div class="v" id="mSubida">—</div><div class="u">Mbps</div></div>
+      <div class="metrica"><div class="k">Latencia</div><div class="v" id="mLatencia">—</div><div class="u">ms (ping)</div></div>
+      <div class="metrica"><div class="k">Jitter</div><div class="v" id="mJitter">—</div><div class="u">ms</div></div>
+    </div>
+    <div class="small muted" id="ubicacionTxt">Ubicación georreferenciada: se solicita al finalizar la prueba.</div>
+  </section>
+
+  <section class="card" aria-labelledby="t-form">
+    <div class="card-head">
+      <h2 id="t-form">Parámetros de enlace y envío a registro</h2>
+      <span class="card-meta">Unidades 3, 5 y 7</span>
+    </div>
+    <form id="form" novalidate>
+      <div class="campos">
+        <div class="campo">
+          <label for="conexion">Medio de conexión</label>
+          <select id="conexion" required>
+            <option value="">Elegí una opción</option>
+            <option value="WiFi">WiFi</option>
+            <option value="Datos móviles">Datos móviles (antena celular)</option>
+            <option value="Cable">Cable (Ethernet)</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="tecnologia">Tecnología de la red móvil</label>
+          <select id="tecnologia">
+            <option value="">No sé / no aplica</option>
+            <option value="5G">5G</option>
+            <option value="4G">4G</option>
+            <option value="3G">3G</option>
+            <option value="2G">2G</option>
+          </select>
+          <span class="ayuda">Indicador junto a las barras de cobertura del teléfono.</span>
+        </div>
+        <div class="campo">
+          <label for="empresa" id="labelEmpresa">Operadora / Proveedor</label>
+          <select id="empresa" required></select>
+        </div>
+        <div class="campo">
+          <label for="lugar">Entorno de propagación</label>
+          <select id="lugar">
+            <option value="">Sin indicar</option>
+            <option value="Interior">Interior</option>
+            <option value="Exterior">Exterior</option>
+            <option value="En movimiento">En movimiento</option>
+          </select>
+        </div>
+        <div class="campo full">
+          <label for="nombre_dispositivo">Identificador o alias del equipo (opcional)</label>
+          <input id="nombre_dispositivo" autocomplete="off" maxlength="40" placeholder="Ej.: Galaxy A54 de Ana · Laboratorio 2">
+          <span class="ayuda" id="ayudaNombre">Se muestra en el feed en vivo y en la tabla general. Si preferís mantenerlo anónimo, dejalo vacío.</span>
+        </div>
+        <div class="campo">
+          <label for="marca" id="labelMarca">Marca del dispositivo</label>
+          <input id="marca" list="marcas" autocomplete="off" required>
+          <datalist id="marcas">
+            <option>Samsung</option><option>Motorola</option><option>Xiaomi</option><option>Apple</option>
+            <option>Huawei</option><option>Google</option><option>Oppo</option><option>Realme</option>
+            <option>Vivo</option><option>LG</option><option>TCL/Alcatel</option><option>ZTE</option><option>Nokia</option>
+          </datalist>
+        </div>
+        <div class="campo">
+          <label for="modelo">Modelo comercial</label>
+          <input id="modelo" autocomplete="off" placeholder="Ej.: Galaxy A54">
+        </div>
+        <div class="campo">
+          <label for="so">Sistema operativo</label>
+          <input id="so" autocomplete="off" required>
+        </div>
+        <div class="campo">
+          <label for="senal_dbm">Potencia recibida en dBm (opcional)</label>
+          <input id="senal_dbm" type="number" inputmode="numeric" min="-140" max="-30" placeholder="Ej.: -92">
+          <span class="ayuda">En Android: Ajustes → Acerca del teléfono → Estado → Estado de SIM → Intensidad de la señal.</span>
+        </div>
+        <div class="campo">
+          <label for="barras">Barras de señal visibles</label>
+          <select id="barras">
+            <option value="">No sé</option>
+            <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="comentario">Observación o aula</label>
+          <input id="comentario" autocomplete="off" placeholder="Ej.: Aula 3, Bloque Central">
+        </div>
+        <div class="campo full" id="analisis" hidden>
+          <div class="small" id="analisisTxt" style="max-width:none;padding:12px 0;border-top:1px solid var(--line)"></div>
+        </div>
+        <div class="campo full">
+          <label class="check" for="consentimiento">
+            <input type="checkbox" id="consentimiento" required>
+            <span>Acepto registrar esta medición (velocidades, características técnicas del equipo y ubicación aproximada) para análisis académico de la cátedra de Comunicación (UTN FRT). No se almacenan números telefónicos ni direcciones IP personales.</span>
+          </label>
+        </div>
+      </div>
+      <button class="primario" type="submit" id="btnEnviar" disabled>Registrar medición</button>
+      <div id="estado" class="aviso" hidden></div>
+    </form>
+  </section>
+</main>
+
+<script src="config.js"></script>
+<script src="teoria.js"></script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const CFG = window.CONFIG;
+const medicion = {};
+let medido = false;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---------- Gestión de Tema (Claro / Oscuro) ----------
+function aplicarTema(t) {
+  if (t === "dark" || t === "light") {
+    document.documentElement.setAttribute("data-theme", t);
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  const esOscuro = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  $("txtTema").textContent = esOscuro ? "Oscuro" : "Claro";
+}
+function alternarTema() {
+  const actual = document.documentElement.getAttribute("data-theme");
+  const prefOscuro = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const esOscuro = actual === "dark" || (!actual && prefOscuro);
+  const nuevo = esOscuro ? "light" : "dark";
+  try { localStorage.setItem("utn_tema", nuevo); } catch (e) {}
+  aplicarTema(nuevo);
+}
+try {
+  const guardado = localStorage.getItem("utn_tema");
+  if (guardado) aplicarTema(guardado);
+  else aplicarTema(null);
+} catch (e) {}
+$("btnTema").addEventListener("click", alternarTema);
+
+// ---------- Velocímetro Logarítmico (0–1000 Mbps) ----------
+const G = { cx: 170, cy: 176, r: 140, max: 1000 };
+const frac = (v) => Math.min(1, Math.log10(1 + Math.max(0, v)) / Math.log10(1 + G.max));
+function punto(f, r) {
+  const a = Math.PI - f * Math.PI;
+  return [G.cx + r * Math.cos(a), G.cy - r * Math.sin(a)];
+}
+function arco(f) {
+  const [x0, y0] = punto(0, G.r), [x1, y1] = punto(f, G.r);
+  return `M ${x0.toFixed(1)} ${y0.toFixed(1)} A ${G.r} ${G.r} 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+}
+function dibujarGauge(v) {
+  const ticks = [0, 1, 5, 10, 50, 100, 500, 1000];
+  const marcas = ticks.map((t) => {
+    const [x0, y0] = punto(frac(t), G.r + 11), [x1, y1] = punto(frac(t), G.r + 2);
+    const [lx, ly] = punto(frac(t), G.r - 26);
+    return `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="var(--muted)" stroke-width="2"/>
+            <text x="${lx}" y="${ly + 4}" text-anchor="middle" font-family="JetBrains Mono, monospace" font-weight="600" font-size="11.5" fill="var(--muted)">${t}</text>`;
+  }).join("");
+  const needlePos = punto(frac(v), G.r);
+  $("gauge").innerHTML = `
+    <path d="${arco(1)}" fill="none" stroke="var(--line-strong)" stroke-width="15" stroke-linecap="round"/>
+    ${v > 0 ? `<path d="${arco(frac(v))}" fill="none" stroke="var(--accent)" stroke-width="15" stroke-linecap="round"/>` : ""}
+    ${v > 0 ? `<circle cx="${needlePos[0].toFixed(1)}" cy="${needlePos[1].toFixed(1)}" r="6" fill="var(--surface)" stroke="var(--accent)" stroke-width="3.5"/>` : ""}
+    ${marcas}`;
+}
+function mostrarVelocidad(v, fase) {
+  dibujarGauge(v);
+  $("gValor").textContent = v >= 100 ? v.toFixed(0) : v.toFixed(1);
+  $("gFase").textContent = fase;
+}
+
+// ---------- Detección del Dispositivo ----------
+const REGLAS_MARCA = [
+  [/iPhone|iPad|iPod|Macintosh/i, "Apple"],
+  [/^SM-|Galaxy|samsung/i, "Samsung"],
+  [/moto|^XT\d{4}/i, "Motorola"],
+  [/Redmi|POCO|Xiaomi|^Mi |^M2\d{3}|^2\d{6}/i, "Xiaomi"],
+  [/Pixel/i, "Google"],
+  [/HUAWEI|Honor|^[A-Z]{3}-L\d/i, "Huawei"],
+  [/^CPH\d|OPPO/i, "Oppo"],
+  [/^RMX\d|realme/i, "Realme"],
+  [/^V\d{4}|vivo/i, "Vivo"],
+  [/^LM-|LG-/i, "LG"],
+  [/TCL|Alcatel|^T\d{3}[A-Z]/i, "TCL/Alcatel"],
+  [/ZTE|Blade/i, "ZTE"],
+  [/Nokia|^TA-\d/i, "Nokia"],
+];
+const SAMSUNG = {
+  A032: "Galaxy A03 Core", A035: "Galaxy A03", A045: "Galaxy A04", A047: "Galaxy A04s", A055: "Galaxy A05", A057: "Galaxy A05s",
+  A135: "Galaxy A13", A145: "Galaxy A14", A146: "Galaxy A14 5G", A155: "Galaxy A15", A156: "Galaxy A15 5G",
+  A245: "Galaxy A24", A256: "Galaxy A25 5G", A325: "Galaxy A32", A336: "Galaxy A33 5G", A346: "Galaxy A34 5G",
+  A356: "Galaxy A35 5G", A525: "Galaxy A52", A536: "Galaxy A53 5G", A546: "Galaxy A54 5G", A556: "Galaxy A55 5G",
+  G991: "Galaxy S21", S901: "Galaxy S22", S911: "Galaxy S23", S918: "Galaxy S23 Ultra", S921: "Galaxy S24", S928: "Galaxy S24 Ultra",
+};
+function nombreComercial(modelo) {
+  const m = modelo.match(/^SM-([A-Z]\d{3})/i);
+  if (m && SAMSUNG[m[1].toUpperCase()]) return `${SAMSUNG[m[1].toUpperCase()]} (${modelo})`;
+  return modelo;
+}
+function marcaDesde(texto) {
+  for (const [re, m] of REGLAS_MARCA) if (re.test(texto)) return m;
+  return "";
+}
+
+async function detectarDispositivo() {
+  const ua = navigator.userAgent;
+  let so = "Otro", version = "", modelo = "";
+  if (/iPhone|iPad|iPod/.test(ua)) {
+    so = "iOS";
+    const m = ua.match(/OS (\d+)[_.](\d+)/); if (m) version = `${m[1]}.${m[2]}`;
+    modelo = /iPad/.test(ua) ? "iPad" : "iPhone";
+  } else if (/Android/.test(ua)) {
+    so = "Android";
+    const m = ua.match(/Android (\d+(?:\.\d+)?)/); if (m) version = m[1];
+    const mm = ua.match(/Android [^;]*; ([^;)]+)[;)]/); if (mm && mm[1].trim() !== "K") modelo = mm[1].trim();
+  } else if (/Windows NT/.test(ua)) { so = "Windows"; }
+  else if (/Mac OS X/.test(ua)) { so = "macOS"; }
+  else if (/Linux/.test(ua)) { so = "Linux"; }
+
+  if (navigator.userAgentData?.getHighEntropyValues) {
+    try {
+      const h = await navigator.userAgentData.getHighEntropyValues(["model", "platformVersion"]);
+      if (h.model) modelo = h.model;
+      if (so === "Android" && h.platformVersion) version = h.platformVersion.split(".")[0];
+      if (so === "Windows" && h.platformVersion) version = parseInt(h.platformVersion) >= 13 ? "11" : "10";
+    } catch (e) { /* sin client hints */ }
+  }
+  const movil = /Mobi|Android|iPhone|iPod/.test(ua) || navigator.userAgentData?.mobile;
+  const tablet = /iPad|Tablet/.test(ua);
+  const navegador = /EdgA?\//.test(ua) ? "Edge" : /SamsungBrowser/.test(ua) ? "Samsung Internet"
+    : /Firefox|FxiOS/.test(ua) ? "Firefox" : /CriOS|Chrome/.test(ua) ? "Chrome" : /Safari/.test(ua) ? "Safari" : "Otro";
+
+  const marca = marcaDesde(modelo) || marcaDesde(ua);
+  modelo = nombreComercial(modelo);
+  Object.assign(medicion, {
+    tipo_dispositivo: tablet ? "Tablet" : movil ? "Celular" : "Computadora",
+    marca,
+    modelo,
+    so,
+    version_so: version,
+    navegador,
+  });
+  $("chipEquipo").textContent = [medicion.marca, modelo].filter(Boolean).join(" ") || medicion.tipo_dispositivo;
+  if (medicion.tipo_dispositivo === "Computadora") {
+    $("labelMarca").textContent = "Marca de la computadora";
+    $("labelEmpresa").textContent = "Proveedor de internet";
+    $("marca").placeholder = "Ej.: Lenovo, HP, Dell, Apple";
+    $("modelo").placeholder = "Ej.: ThinkPad E14";
+    $("nombre_dispositivo").placeholder = "Ej.: PC-LAB-04 o Notebook de Ana";
+    $("ayudaNombre").textContent = so === "macOS"
+      ? "Podés verlo en Ajustes del Sistema → General → Información."
+      : "En Windows: Configuración → Sistema → Información → Nombre del dispositivo.";
+    for (const id of ["tecnologia", "senal_dbm", "barras"]) $(id).closest(".campo").hidden = true;
+  }
+  $("chipSO").textContent = `${so} ${version}`.trim();
+  $("marca").value = medicion.marca;
+  $("modelo").value = modelo;
+  $("so").value = `${so} ${version}`.trim();
+}
+
+function detectarConexion() {
+  const c = navigator.connection;
+  const tipo = c?.type;
+  let conexion = "";
+  if (tipo === "wifi") conexion = "WiFi";
+  else if (tipo === "cellular") conexion = "Datos móviles";
+  else if (tipo === "ethernet") conexion = "Cable";
+  medicion.tipo_red_detectado = [tipo, c?.effectiveType].filter(Boolean).join(" / ");
+  if (conexion) $("conexion").value = conexion;
+  pintarConexion(conexion);
+}
+
+function pintarConexion(txt) {
+  $("chipConexion").textContent = txt || "Medio por confirmar";
+  $("dotConexion").className = "dot" + (txt === "WiFi" ? " wifi" : txt === "Datos móviles" ? " datos" : txt === "Cable" ? " ok" : "");
+}
+
+function empresaDesde(isp) {
+  const s = (isp || "").toLowerCase();
+  if (/claro|amx|techtel/.test(s)) return "Claro";
+  if (/telef[oó]nica|movistar/.test(s)) return "Movistar";
+  if (/telecom|personal/.test(s)) return "Personal";
+  return "";
+}
+
+async function detectarISP() {
+  try {
+    const r = await fetch(CFG.IP_INFO_URL, { cache: "no-store" });
+    const d = await r.json();
+    if (!d.success) throw new Error("sin datos");
+    medicion.isp_detectado = d.connection?.isp || d.connection?.org || "";
+    medicion.asn = d.connection?.asn ? "AS" + d.connection.asn : "";
+    medicion.ciudad = d.city || "";
+    medicion._ipLat = d.latitude;
+    medicion._ipLon = d.longitude;
+    $("chipISP").textContent = medicion.isp_detectado || "desconocido";
+    sugerirEmpresa();
+  } catch (e) {
+    $("chipISP").textContent = "no detectado";
+  }
+}
+
+function sugerirEmpresa() {
+  const sug = empresaDesde(medicion.isp_detectado);
+  const esProveedor = $("conexion").value === "Datos móviles" || medicion.tipo_dispositivo === "Computadora" || $("conexion").value === "WiFi";
+  if (esProveedor && sug && !$("empresa").value) $("empresa").value = sug;
+}
+
+// ---------- Motor de Prueba de Velocidad ----------
+const host = CFG.SPEED_HOST;
+const mediana = (a) => {
+  const s = [...a].sort((x, y) => x - y);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+async function medirLatencia(n = 10) {
+  const tiempos = [];
+  for (let i = 0; i < n + 1; i++) {
+    const t0 = performance.now();
+    await fetch(`${host}/__down?bytes=0&r=${Math.random()}`, { cache: "no-store" });
+    const t = performance.now() - t0;
+    if (i > 0) tiempos.push(t);
+    mostrarVelocidad(0, `Latencia · ${t.toFixed(0)} ms`);
+  }
+  let jit = 0;
+  for (let i = 1; i < tiempos.length; i++) jit += Math.abs(tiempos[i] - tiempos[i - 1]);
+  return { latencia: mediana(tiempos), jitter: jit / (tiempos.length - 1) };
+}
+
+async function bajar(bytes) {
+  const t0 = performance.now();
+  const r = await fetch(`${host}/__down?bytes=${bytes}&r=${Math.random()}`, { cache: "no-store" });
+  const lector = r.body.getReader();
+  let recibidos = 0;
+  for (;;) {
+    const { done, value } = await lector.read();
+    if (done) break;
+    recibidos += value.length;
+    const s = (performance.now() - t0) / 1000;
+    if (s > 0.15) mostrarVelocidad((recibidos * 8) / s / 1e6, "Mbps · midiendo bajada");
+  }
+  const s = (performance.now() - t0) / 1000;
+  return { mbps: (recibidos * 8) / s / 1e6, s };
+}
+
+async function subir(bytes) {
+  const datos = new Uint8Array(bytes);
+  crypto.getRandomValues(datos.subarray(0, Math.min(bytes, 65536)));
+  const t0 = performance.now();
+  await fetch(`${host}/__up?r=${Math.random()}`, { method: "POST", body: datos, cache: "no-store" });
+  const s = (performance.now() - t0) / 1000;
+  const mbps = (bytes * 8) / s / 1e6;
+  mostrarVelocidad(mbps, "Mbps · midiendo subida");
+  return { mbps, s };
+}
+
+async function serie(fn, tamanos) {
+  const res = [];
+  for (const b of tamanos) {
+    const r = await fn(b);
+    res.push(r.mbps);
+    if (r.s > 2.5) break;
+  }
+  const grandes = res.length > 1 ? res.slice(1) : res;
+  return Math.max(...grandes);
+}
+
+function ubicar() {
+  return new Promise((ok) => {
+    if (!navigator.geolocation) return ok(null);
+    navigator.geolocation.getCurrentPosition(
+      (p) => ok({ lat: p.coords.latitude, lon: p.coords.longitude, precision: p.coords.accuracy, fuente: "GPS" }),
+      () => ok(null),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+    );
+  });
+}
+
+async function medir() {
+  const btn = $("btnMedir");
+  btn.disabled = true;
+  $("txtBtnMedir").textContent = "Ejecutando secuencia de prueba…";
+  ["mBajada", "mSubida", "mLatencia", "mJitter"].forEach((id) => ($(id).textContent = "—"));
+  try {
+    const { latencia, jitter } = await medirLatencia();
+    $("mLatencia").textContent = latencia.toFixed(0);
+    $("mJitter").textContent = jitter.toFixed(1);
+
+    const bajada = await serie(bajar, [200e3, 2e6, 10e6, 25e6]);
+    $("mBajada").textContent = bajada.toFixed(1);
+
+    const subida = await serie(subir, [200e3, 1e6, 4e6, 10e6]);
+    $("mSubida").textContent = subida.toFixed(1);
+
+    mostrarVelocidad(bajada, "Mbps · resultado de bajada");
+    Object.assign(medicion, {
+      bajada_mbps: +bajada.toFixed(2),
+      subida_mbps: +subida.toFixed(2),
+      latencia_ms: +latencia.toFixed(1),
+      jitter_ms: +jitter.toFixed(1),
+    });
+
+    $("ubicacionTxt").textContent = "Ubicación: solicitando coordenadas GPS…";
+    const pos = await ubicar();
+    if (pos) {
+      Object.assign(medicion, {
+        lat: +pos.lat.toFixed(5),
+        lon: +pos.lon.toFixed(5),
+        precision_m: Math.round(pos.precision),
+        ubicacion_fuente: "GPS",
+      });
+      $("ubicacionTxt").textContent = `Ubicación: GPS activo, precisión ±${Math.round(pos.precision)} m.`;
+    } else if (medicion._ipLat) {
+      Object.assign(medicion, {
+        lat: +(+medicion._ipLat).toFixed(3),
+        lon: +(+medicion._ipLon).toFixed(3),
+        precision_m: "",
+        ubicacion_fuente: "IP (aprox.)",
+      });
+      $("ubicacionTxt").textContent = `Ubicación: sin GPS, se asigna centro urbano aproximado por IP (${medicion.ciudad || "detectado"}).`;
+    } else {
+      $("ubicacionTxt").textContent = "Ubicación: no disponible.";
+    }
+    medido = true;
+    analizar();
+    $("btnEnviar").disabled = false;
+    $("txtBtnMedir").textContent = "Volver a medir";
+  } catch (e) {
+    mostrarVelocidad(0, "Error en la medición");
+    $("txtBtnMedir").textContent = "Reintentar medición";
+    estado("No se pudo completar la prueba contra el servidor de velocidad. Verificá tu conexión a internet e intentá nuevamente.", "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- Almacenamiento y Envío ----------
+function estado(txt, tipo) {
+  const el = $("estado");
+  el.hidden = false;
+  el.textContent = txt;
+  el.className = "aviso " + (tipo || "");
+}
+
+function guardarLocal(reg) {
+  try {
+    let lista = [];
+    const crudo = localStorage.getItem("mediciones");
+    if (crudo) {
+      lista = JSON.parse(crudo);
+    } else if (Array.isArray(window.SEMILLA_INICIAL)) {
+      lista = [...window.SEMILLA_INICIAL];
+    }
+    lista.push(reg);
+    localStorage.setItem("mediciones", JSON.stringify(lista));
+  } catch (e) { /* almacenamiento no disponible */ }
+}
+
+async function enviar(ev) {
+  ev.preventDefault();
+  if (!medido) return estado("Primero ejecutá la medición con el botón «Iniciar medición».", "error");
+  const faltan = [];
+  if (!$("conexion").value) faltan.push("el medio de conexión");
+  if (!$("empresa").value) faltan.push("la operadora o proveedor");
+  if (!$("marca").value.trim()) faltan.push("la marca del dispositivo");
+  if (!$("consentimiento").checked) faltan.push("el consentimiento de uso académico");
+  if (faltan.length) return estado("Falta completar: " + faltan.join(", ") + ".", "error");
+
+  const soTxt = $("so").value.trim();
+  const reg = {
+    ...medicion,
+    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    fecha: new Date().toISOString(),
+    conexion: $("conexion").value,
+    tecnologia: $("conexion").value === "Datos móviles" ? $("tecnologia").value : "",
+    empresa: $("empresa").value,
+    origen: "web",
+    nombre_dispositivo: $("nombre_dispositivo").value.trim(),
+    marca: $("marca").value.trim(),
+    modelo: $("modelo").value.trim(),
+    so: soTxt.split(" ")[0],
+    version_so: soTxt.split(" ").slice(1).join(" "),
+    senal_dbm: $("senal_dbm").value,
+    barras: $("barras").value,
+    lugar: $("lugar").value,
+    comentario: $("comentario").value.trim(),
+  };
+  const fila = {};
+  for (const c of window.CAMPOS) fila[c] = reg[c] ?? "";
+
+  $("btnEnviar").disabled = true;
+  guardarLocal(fila);
+  if (!CFG.SCRIPT_URL) {
+    estado("Medición registrada en la base local del navegador. Ya podés analizarla en la pestaña Estadísticas.", "ok");
+  } else if (CFG.SCRIPT_URL.startsWith("/")) {
+    try {
+      const r = await fetch(CFG.SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json;charset=utf-8" },
+        body: JSON.stringify(fila),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || "Error al guardar");
+      estado("¡Listo! Tu medición se validó y guardó en nuestro servidor propio (/api/mediciones).", "ok");
+    } catch (e) {
+      estado("Servidor local sin respuesta; tu medición quedó guardada en este navegador y disponible en Estadísticas.", "ok");
+    }
+  } else {
+    try {
+      await fetch(CFG.SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(fila),
+      });
+      estado("¡Listo! Tu medición se registró y sincronizó con la planilla compartida.", "ok");
+    } catch (e) {
+      estado("No se pudo conectar con la planilla remota, pero tu medición quedó guardada en este navegador.", "error");
+    }
+  }
+  medido = false;
+}
+
+// ---------- Análisis Teórico en Tiempo Real (Sanitizado contra XSS) ----------
+function analizar() {
+  const T = window.TEORIA, f = (x, d = 1) => x.toLocaleString("es-AR", { maximumFractionDigits: d });
+  const partes = [];
+  const dbm = parseFloat($("senal_dbm").value);
+  const conexion = $("conexion").value || "Datos móviles";
+  if (!Number.isNaN(dbm)) {
+    const ruido = T.ruidoTermicoDbm(20, 25);
+    const snr = T.snrDb(dbm, 20, 25, conexion);
+    const c = T.shannonMbps(20, snr);
+    partes.push(`<b>${esc(dbm)} dBm = ${esc(T.potenciaLegible(T.dbmAmW(dbm)))}</b> · calidad de enlace: <b>${esc(T.calidad(dbm, conexion))}</b>.`);
+    if (conexion !== "WiFi") {
+      const s = T.potenciaTotalDbm(dbm, 20, conexion);
+      partes.push(`Valor RSRP (subportadora de 15 kHz). En un canal de 20 MHz (${T.subportadoras(20)} subportadoras): S = ${esc(dbm)} + 10·log₁₀(${T.subportadoras(20)}) = ${esc(f(s))} dBm.`);
+    }
+    partes.push(`Piso de ruido térmico (kTB, 20 MHz, 25 °C) = ${esc(f(ruido))} dBm → SNR ≈ ${esc(f(snr))} dB → Capacidad de Shannon ≈ ${esc(f(c, 0))} Mbps.`);
+    if (medicion.bajada_mbps) {
+      const pct = (100 * medicion.bajada_mbps) / c;
+      partes.push(`Tu velocidad de bajada medida aprovecha el <b>${esc(f(pct, 0))} %</b> de ese límite teórico.`);
+      if (pct > 100) {
+        partes.push(`<b>Nota técnica:</b> Superar el límite de un canal simple de 20 MHz indica agregación de portadoras (Carrier Aggregation / MIMO) o que la potencia ingresada no corresponde a la interfaz activa.`);
+      }
+    }
+  }
+  const tec = $("tecnologia").value;
+  if (tec && T.MAXIMOS[tec] && $("conexion").value === "Datos móviles") {
+    partes.push(`Máximo teórico de ${esc(tec)} (Unidad 7): ${esc(T.MAXIMOS[tec].texto)}.`);
+  }
+  $("analisis").hidden = !partes.length;
+  $("analisisTxt").innerHTML = partes.join("<br>");
+}
+
+// ---------- Inicialización ----------
+["senal_dbm", "tecnologia", "conexion"].forEach((id) => $(id).addEventListener("input", analizar));
+$("empresa").innerHTML = '<option value="">Elegí una opción</option>' + window.EMPRESAS.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join("");
+$("modoDemo").hidden = !!CFG.SCRIPT_URL;
+$("avisoAndroid").hidden = !/Android/i.test(navigator.userAgent);
+$("conexion").addEventListener("change", () => {
+  pintarConexion($("conexion").value);
+  sugerirEmpresa();
+});
+$("btnMedir").addEventListener("click", medir);
+$("form").addEventListener("submit", enviar);
+dibujarGauge(0);
+detectarConexion();
+detectarDispositivo().then(detectarISP);
+</script>
+</body>
+</html>
