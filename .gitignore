@@ -3,3 +3,8 @@ node_modules/
 Thumbs.db
 *.tmp
 .impeccable/
+android/.gradle/
+android/build/
+android/app/build/
+pc/mediciones_pc.csv
+mediciones_pc.csv
