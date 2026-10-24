@@ -64,11 +64,11 @@ import java.util.concurrent.TimeUnit;
 /**
  * Medidor de Señal - UTN FRT, Comunicación.
  * Lee automáticamente equipo, red (RSRP, RSRQ, SINR, banda, ancho de canal / WiFi RSSI, canal, estándar),
- * mide velocidad, ubica por GPS, aplica la teoría de la cátedra y sincroniza con nuestra planilla de Google Sheets.
+ * mide velocidad, ubica por GPS, aplica la teoría de la cátedra y sincroniza automáticamente con nuestra planilla de Google Sheets.
  */
 public class MainActivity extends Activity {
 
-    // URL de nuestra planilla (Google Apps Script propio). Se puede editar desde "Configuración" en la app.
+    // URL fija de nuestra planilla (Google Apps Script propio). Automática y no editable por el usuario.
     static final String SCRIPT_URL_POR_DEFECTO = "https://script.google.com/macros/s/AKfycbw3aFZwnii8ENYhQgDPl2qAefmcTeZ2HE-QDPz2cuogEJQWPQqG6i21825SfMNFxq5ZVw/exec";
     static final String SPEED_HOST = "https://speed.cloudflare.com";
     static final String IP_INFO_URL = "https://ipwho.is/";
@@ -88,7 +88,7 @@ public class MainActivity extends Activity {
     final Handler ui = new Handler(Looper.getMainLooper());
     TextView tEquipo, tRed, tVelocidad, tFase, tResultados, tTeoria, tEstado;
     Button bMedir, bEnviar, bCompartir;
-    EditText eLugar, eComentario, eUrl;
+    EditText eLugar, eComentario;
     CheckBox cConsentimiento;
     final Map<String, Object> medicion = new HashMap<>();
     Red redActual = new Red();
@@ -618,23 +618,18 @@ public class MainActivity extends Activity {
     }
 
     // ======================================================================
-    // Envío a la planilla
+    // Envío automático a nuestra planilla
     // ======================================================================
     void enviar() {
         if (!cConsentimiento.isChecked()) { estado("Para enviar tenés que aceptar el uso de los datos.", BAD); return; }
         medicion.put("lugar", eLugar.getText().toString().trim());
         medicion.put("comentario", eComentario.getText().toString().trim());
-        String url = eUrl.getText().toString().trim();
-        prefs.edit().putString("script_url", url).apply();
+        final String url = SCRIPT_URL_POR_DEFECTO;
         JSONObject j = new JSONObject();
         try {
             for (String c : CAMPOS) { Object v = medicion.get(c); j.put(c, v == null ? "" : v); }
         } catch (Exception ignored) { }
         guardarHistorial(j);
-        if (url.isEmpty()) {
-            estado("Guardada en el celular. Configurá la URL de la planilla para compartirla con el grupo.", AMBER);
-            return;
-        }
         bEnviar.setEnabled(false);
         new Thread(() -> {
             try {
@@ -783,13 +778,6 @@ public class MainActivity extends Activity {
         bCompartir.setOnClickListener(v -> compartir());
         tEstado = texto("", 14, FG, true); tEstado.setVisibility(View.GONE);
         cEnv.addView(tEstado, lpr);
-
-        LinearLayout cCfg = tarjeta(raiz, "Configuración de sincronización");
-        cCfg.addView(texto("URL de la planilla (Apps Script):", 13, MUTED, false));
-        eUrl = campo("https://script.google.com/macros/s/…/exec");
-        eUrl.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        eUrl.setText(prefs.getString("script_url", SCRIPT_URL_POR_DEFECTO));
-        cCfg.addView(eUrl);
 
         setContentView(sv);
     }

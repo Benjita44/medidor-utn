@@ -60,7 +60,6 @@ namespace MedidorSenalUTN
         private Button btnEnviar;
         private ComboBox cmbLugar;
         private TextBox txtComentario;
-        private TextBox txtUrl;
         private CheckBox chkConsentimiento;
         private CheckBox chkMonitoreo;
         private NumericUpDown numIntervalo;
@@ -347,25 +346,6 @@ namespace MedidorSenalUTN
                 Visible = false
             };
 
-            // Configuración URL
-            var lblUrl = new Label
-            {
-                Text = "URL de sincronización (Google Apps Script):",
-                Font = new Font("Segoe UI", 8.75f),
-                ForeColor = ColMuted,
-                AutoSize = true,
-                Dock = DockStyle.Top,
-                Padding = new Padding(0, 10, 0, 2)
-            };
-            txtUrl = new TextBox
-            {
-                Dock = DockStyle.Top,
-                Font = new Font("Consolas", 8.75f),
-                Text = LeerScriptUrlInicial()
-            };
-
-            cardEnv.Controls.Add(txtUrl);
-            cardEnv.Controls.Add(lblUrl);
             cardEnv.Controls.Add(lblEstado);
             cardEnv.Controls.Add(btnEnviar);
             cardEnv.Controls.Add(chkConsentimiento);
@@ -892,7 +872,7 @@ namespace MedidorSenalUTN
 
             medicion["lugar"] = cmbLugar.SelectedItem != null ? cmbLugar.SelectedItem.ToString() : "Interior";
             medicion["comentario"] = txtComentario.Text.Trim();
-            string scriptUrl = txtUrl.Text.Trim();
+            string scriptUrl = DEFAULT_SCRIPT_URL;
 
             var fila = new Dictionary<string, object>();
             foreach (var c in CAMPOS)
