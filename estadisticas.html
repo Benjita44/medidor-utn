@@ -76,16 +76,74 @@
   }
   .teoria-controles {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    grid-template-columns: minmax(240px, 2fr) repeat(2, minmax(150px, 1fr)) minmax(220px, 1.5fr);
     gap: 14px;
     align-items: flex-end;
     padding-bottom: 14px;
     border-bottom: 1px solid var(--line);
   }
+  @media (max-width: 900px) {
+    .teoria-controles {
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+  }
   .ecuacion-pill {
-    font: 600 0.86rem/1.45 var(--font-mono);
+    font: 600 0.84rem/1.45 var(--font-mono);
     color: var(--fg);
-    padding: 10px 0;
+    padding: 8px 12px;
+    background: var(--surface-alt);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .pasos-teoria {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--line);
+  }
+  .paso-item {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .paso-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .paso-titulo {
+    font: 700 0.82rem/1.3 var(--font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .paso-valor {
+    font: 700 0.92rem/1.3 var(--font-mono);
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .paso-desc {
+    font-size: 0.88rem;
+    line-height: 1.5;
+    color: var(--fg-secondary);
+    margin: 0;
+  }
+  .paso-desc code {
+    font: 600 0.82rem/1.3 var(--font-mono);
+    color: var(--fg);
+    background: var(--surface-alt);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+  }
+  tr.seleccionable {
+    cursor: pointer;
+  }
+  tr.seleccionada td {
+    background: var(--accent-soft);
   }
 
   /* Modo en vivo para proyección en aula */
@@ -338,10 +396,14 @@
 
   <section class="card" aria-labelledby="t-teoria">
     <div class="card-head">
-      <h2 id="t-teoria">Relación con la teoría de la cátedra</h2>
-      <span class="card-meta">Johnson-Nyquist · RSRP · Límite de Shannon-Hartley</span>
+      <h2 id="t-teoria">Análisis de tu medición con la teoría de la cátedra</h2>
+      <span class="card-meta" id="metaTeoriaIndiv">Johnson-Nyquist · RSRP · Límite de Shannon-Hartley</span>
     </div>
     <div class="teoria-controles">
+      <div class="campo">
+        <label for="selMedicion">Medición analizada (elegí tu equipo o hacé clic en la tabla inferior)</label>
+        <select id="selMedicion"></select>
+      </div>
       <div class="campo">
         <label for="tB">Ancho de banda del canal B (MHz)</label>
         <input id="tB" type="number" min="1" max="400" value="20">
@@ -352,33 +414,31 @@
       </div>
       <div class="ecuacion-pill" id="tRuido"></div>
     </div>
+
+    <div class="chips" id="chipsIndiv"></div>
+
+    <div class="metricas" id="kpisIndiv" style="padding-top:10px">
+      <div class="metrica"><div class="k">Potencia recibida</div><div class="v" id="indDbm">—</div><div class="u" id="indMw">dBm · lineal</div></div>
+      <div class="metrica"><div class="k">Relación Señal/Ruido</div><div class="v" id="indSnr">—</div><div class="u" id="indSnrTipo">dB sobre piso térmico</div></div>
+      <div class="metrica"><div class="k">Capacidad de Shannon</div><div class="v" id="indShannon">—</div><div class="u" id="indShannonSub">Mbps teóricos (C)</div></div>
+      <div class="metrica"><div class="k">Caudal medido vs. C</div><div class="v" id="indEfic">—</div><div class="u" id="indBajadaReal">aprovechamiento del canal</div></div>
+    </div>
+
     <div class="graficos">
       <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
         <div class="card-head" style="padding-bottom:6px">
-          <h2>Señal (dBm) vs. Velocidad de bajada + Curva de Shannon</h2>
+          <h2>Desglose físico y matemático de tu enlace</h2>
+        </div>
+        <div class="pasos-teoria" id="desgloseIndiv"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+        <div class="card-head" style="padding-bottom:6px">
+          <h2>Tu medición frente a la curva límite de Shannon</h2>
         </div>
         <div class="lienzo"><canvas id="gDisp"></canvas></div>
         <p class="small muted" id="tPearson" style="margin:0"></p>
       </div>
-      <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
-        <div>
-          <div class="card-head" style="padding-bottom:6px;margin-bottom:8px">
-            <h2>Capacidad de Shannon: C = B · log₂(1 + S/N)</h2>
-          </div>
-          <div class="scroll-x"><table id="tablaShannon"></table></div>
-        </div>
-        <div>
-          <div class="card-head" style="padding-bottom:6px;margin-bottom:8px">
-            <h2>Velocidad medida vs. máximo teórico por generación</h2>
-          </div>
-          <div class="scroll-x"><table id="tablaTec"></table></div>
-        </div>
-      </div>
     </div>
-    <p class="small muted" style="margin:0">
-      En datos móviles (4G/5G), Android reporta RSRP (potencia de una subportadora de 15 kHz); para obtener la relación señal a ruido se integra la potencia del canal completo mediante <code>S = RSRP + 10·log₁₀(12 · 5 · B)</code>.
-      El modelo base considera ruido térmico puro (<code>N = k·T·B</code>) sin figura de ruido del receptor ni interferencia co-canal, por lo que <i>C</i> representa la cota superior física.
-    </p>
   </section>
 
   <section class="card" aria-labelledby="t-mapa">
@@ -726,54 +786,246 @@ function render() {
   tablaDatos(lista);
 }
 
+function etiquetaMedicion(d, esTuya) {
+  const fecha = d.fecha ? new Date(d.fecha).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }) : "s/f";
+  const eq = d.nombre_dispositivo || [d.marca, d.modelo].filter(Boolean).join(" ") || d.so || "Dispositivo";
+  const red = [d.empresa, d.conexion, d.tecnologia].filter(Boolean).join(" · ");
+  const vel = d.bajada_mbps != null ? `${fmt(d.bajada_mbps)} Mbps` : "s/v";
+  const dbm = d.senal_dbm != null ? ` · ${d.senal_dbm} dBm` : "";
+  return `${esTuya ? "★ Tu medición · " : ""}${eq} (${red}) — ${vel}${dbm} [${fecha}]`;
+}
+
+function seleccionarMedicion(id) {
+  if (!id) return;
+  $("selMedicion").value = String(id);
+  try { localStorage.setItem("utn_ultima_medicion_id", String(id)); } catch (e) {}
+  teoria(filtrados());
+  resaltarFilaSeleccionada(id);
+}
+
+function resaltarFilaSeleccionada(id) {
+  const trs = document.querySelectorAll("#tablaDatos tbody tr[data-id]");
+  trs.forEach((tr) => tr.classList.toggle("seleccionada", tr.dataset.id === String(id)));
+}
+
 function teoria(lista) {
   const T = window.TEORIA;
-  const B = parseFloat($("tB").value) || 20;
+  const ord = [...lista].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const sel = $("selMedicion");
+
+  let idGuardado = "";
+  try { idGuardado = localStorage.getItem("utn_ultima_medicion_id") || ""; } catch (e) {}
+  let idActual = sel.value || idGuardado;
+
+  if (!ord.length) {
+    sel.innerHTML = '<option value="">Sin mediciones disponibles para el filtro actual</option>';
+    $("chipsIndiv").innerHTML = "";
+    ["indDbm", "indSnr", "indShannon", "indEfic"].forEach((id) => ($(id).textContent = "—"));
+    $("desgloseIndiv").innerHTML = '<div class="paso-item"><p class="paso-desc muted">Registrá una medición en la pestaña Medidor para ver aquí el análisis detallado de tu enlace.</p></div>';
+    if (graficos.gDisp) graficos.gDisp.destroy();
+    return;
+  }
+
+  let elegida = ord.find((d) => String(d.id) === String(idActual));
+  if (!elegida) {
+    // Priorizar mediciones locales de este navegador o la más reciente con señal en dBm
+    const localesIds = new Set(leerLocal().map((x) => String(x.id)));
+    elegida = ord.find((d) => localesIds.has(String(d.id)) && !esEjemplo(d)) ||
+              ord.find((d) => d.senal_dbm != null) ||
+              ord[0];
+    idActual = String(elegida.id);
+  }
+
+  sel.innerHTML = ord.map((d) => {
+    const esTuya = idGuardado && String(d.id) === String(idGuardado);
+    return `<option value="${esc(d.id)}"${String(d.id) === String(idActual) ? " selected" : ""}>${esc(etiquetaMedicion(d, esTuya))}</option>`;
+  }).join("");
+
+  const bMed = elegida.ancho_mhz != null ? elegida.ancho_mhz : (parseFloat($("tB").value) || 20);
   const temp = parseFloat($("tT").value);
   const tC = Number.isNaN(temp) ? 25 : temp;
-  const ruido = T.ruidoTermicoDbm(B, tC);
+  const ruido = T.ruidoTermicoDbm(bMed, tC);
   $("tRuido").textContent = `Ruido térmico N = k·T·B = ${fmt(ruido)} dBm (${T.potenciaLegible(T.dbmAmW(ruido))}) a ${tC + 273} K`;
 
-  // Dispersión señal vs bajada + Curva de referencia Shannon + correlación de Pearson
+  const nombreEq = elegida.nombre_dispositivo || [elegida.marca, elegida.modelo].filter(Boolean).join(" ") || "Dispositivo";
+  const dotCls = elegida.conexion === "WiFi" ? "wifi" : elegida.conexion === "Datos móviles" ? "datos" : "ok";
+  const fechaTxt = elegida.fecha ? new Date(elegida.fecha).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }) : "—";
+
+  $("metaTeoriaIndiv").textContent = `${nombreEq} · ${elegida.empresa || "Operadora"} (${fechaTxt})`;
+  $("chipsIndiv").innerHTML = `
+    <span class="chip"><span class="dot ${dotCls}"></span><b>${esc(elegida.conexion || "Enlace")} ${esc(elegida.tecnologia || "")}</b></span>
+    <span class="chip">Operadora: <b>${esc(elegida.empresa || "—")}</b></span>
+    <span class="chip">Equipo: <b>${esc(nombreEq)} (${esc([elegida.so, elegida.version_so].filter(Boolean).join(" "))})</b></span>
+    <span class="chip">Caudal medido: <b>↓ ${fmt(elegida.bajada_mbps)} Mbps · ↑ ${fmt(elegida.subida_mbps)} Mbps</b></span>
+    <span class="chip">Latencia / Jitter: <b>${fmt(elegida.latencia_ms, 0)} ms · ${fmt(elegida.jitter_ms, 1)} ms</b></span>
+    ${elegida.lugar ? `<span class="chip">Entorno: <b>${esc(elegida.lugar)}</b></span>` : ""}
+  `;
+
+  const pasos = [];
+  const tieneDbm = elegida.senal_dbm != null && !Number.isNaN(elegida.senal_dbm);
+
+  if (tieneDbm) {
+    const dbm = elegida.senal_dbm;
+    const mw = T.dbmAmW(dbm);
+    const mwTxt = T.potenciaLegible(mw);
+    const cal = T.calidad(dbm, elegida.conexion);
+    const esWifi = elegida.conexion === "WiFi";
+    const subport = T.subportadoras(bMed);
+    const sTotal = T.potenciaTotalDbm(dbm, bMed, elegida.conexion);
+    const snrTermico = T.snrDb(dbm, bMed, tC, elegida.conexion);
+    const snrEfectivo = elegida.sinr_db != null ? elegida.sinr_db : snrTermico;
+    const cShannon = T.shannonMbps(bMed, snrEfectivo);
+    const cTermico = T.shannonMbps(bMed, snrTermico);
+    const efic = elegida.bajada_mbps != null && cShannon > 0 ? (100 * elegida.bajada_mbps) / cShannon : null;
+
+    $("indDbm").textContent = `${fmt(dbm, 0)} dBm`;
+    $("indMw").textContent = `${mwTxt} · calidad ${cal.toLowerCase()}`;
+    $("indSnr").textContent = `${fmt(snrEfectivo, 1)} dB`;
+    $("indSnrTipo").textContent = elegida.sinr_db != null ? "SINR real medida por el módem" : `SNR estimada (S − N en ${fmt(bMed, 0)} MHz)`;
+    $("indShannon").textContent = `${fmt(cShannon, 0)} Mbps`;
+    $("indShannonSub").textContent = `C = ${fmt(bMed, 0)}·log₂(1 + S/N)`;
+    $("indEfic").textContent = efic != null ? `${fmt(efic, 1)} %` : "—";
+    $("indBajadaReal").textContent = `Bajada real: ${fmt(elegida.bajada_mbps)} Mbps`;
+
+    pasos.push(`
+      <div class="paso-item">
+        <div class="paso-head">
+          <span class="paso-titulo">1. Potencia recibida y atenuación del enlace</span>
+          <span class="paso-valor">${fmt(dbm, 0)} dBm = ${esc(mwTxt)} (${esc(cal)})</span>
+        </div>
+        <p class="paso-desc">
+          Conversión logarítmica a lineal: <code>P = 10^(${fmt(dbm, 0)}/10) mW = ${esc(mwTxt)}</code>.
+          ${!esWifi
+            ? `En redes celulares (${esc(elegida.tecnologia || "4G/5G")}), el equipo informa <b>RSRP</b> (potencia de una sola subportadora de 15 kHz). Integrando las <b>${subport} subportadoras</b> de un canal de ${fmt(bMed, 0)} MHz, la potencia total recibida es <code>S = ${fmt(dbm, 0)} + 10·log₁₀(${subport}) = ${fmt(sTotal, 1)} dBm</code>.`
+            : `En WiFi se mide el <b>RSSI</b> sobre el ancho completo del canal de ${fmt(bMed, 0)} MHz (sensibilidad típica de recepción: −82 dBm).`}
+        </p>
+      </div>
+    `);
+
+    pasos.push(`
+      <div class="paso-item">
+        <div class="paso-head">
+          <span class="paso-titulo">2. Piso de ruido térmico (Johnson-Nyquist) y SNR</span>
+          <span class="paso-valor">N = ${fmt(ruido, 1)} dBm → ${elegida.sinr_db != null ? `SINR = ${fmt(snrEfectivo, 1)} dB` : `SNR = ${fmt(snrTermico, 1)} dB`}</span>
+        </div>
+        <p class="paso-desc">
+          Para <code>B = ${fmt(bMed, 0)} MHz</code> y <code>T = ${tC} °C (${tC + 273} K)</code>, el ruido térmico agitado en el receptor es <code>N = k·T·B = ${fmt(ruido, 1)} dBm</code>.
+          ${elegida.sinr_db != null
+            ? `Tu módem reportó una <b>SINR real de ${fmt(elegida.sinr_db, 1)} dB</b> (que incluye interferencia de celdas vecinas y ruido del receptor, frente a los ${fmt(snrTermico, 1)} dB ideales solo con ruido térmico).`
+            : `La relación señal a ruido libre de interferencia co-canal resulta <code>SNR = S − N = ${fmt(sTotal, 1)} − (${fmt(ruido, 1)}) = ${fmt(snrTermico, 1)} dB</code>.`}
+        </p>
+      </div>
+    `);
+
+    pasos.push(`
+      <div class="paso-item">
+        <div class="paso-head">
+          <span class="paso-titulo">3. Teorema de Shannon-Hartley y aprovechamiento real</span>
+          <span class="paso-valor">C = ${fmt(cShannon, 0)} Mbps · Aprovechamiento: ${efic != null ? fmt(efic, 1) + " %" : "—"}</span>
+        </div>
+        <p class="paso-desc">
+          La capacidad máxima libre de errores del canal es <code>C = B · log₂(1 + S/N) = ${fmt(cShannon, 0)} Mbps</code>${elegida.sinr_db != null ? ` (con ruido térmico puro sería ${fmt(cTermico, 0)} Mbps)` : ""}.
+          Tu velocidad de descarga medida (<b>${fmt(elegida.bajada_mbps)} Mbps</b>) aprovecha el <b>${efic != null ? fmt(efic, 1) : "—"} %</b> de esa cota física.
+          ${efic != null && efic > 100
+            ? "Superar el 100 % de un canal simple indica que tu dispositivo utilizó múltiples flujos espaciales (MIMO) o agregación de portadoras (Carrier Aggregation)."
+            : "La diferencia respecto al límite ideal se debe a la sobrecarga de protocolos (cabeceras TCP/IP), codificación correctora de errores (FEC), retransmisiones (ARQ) y compartición de celda con otros usuarios."}
+        </p>
+      </div>
+    `);
+  } else {
+    $("indDbm").textContent = "Sin dBm";
+    $("indMw").textContent = elegida.conexion === "Cable" ? "Enlace guiado (Ethernet)" : "No reportado en la carga";
+    $("indSnr").textContent = "—";
+    $("indSnrTipo").textContent = `Ruido térmico N = ${fmt(ruido, 1)} dBm`;
+    $("indShannon").textContent = "—";
+    $("indShannonSub").textContent = `Requiere potencia S en dBm`;
+    $("indEfic").textContent = `${fmt(elegida.bajada_mbps)} Mbps`;
+    $("indBajadaReal").textContent = `Subida: ${fmt(elegida.subida_mbps)} Mbps`;
+
+    pasos.push(`
+      <div class="paso-item">
+        <div class="paso-head">
+          <span class="paso-titulo">1. Medio de transmisión y potencia de señal</span>
+          <span class="paso-valor">${esc(elegida.conexion || "Enlace")} ${esc(elegida.tecnologia || "")}</span>
+        </div>
+        <p class="paso-desc">
+          Esta medición no incluye el valor de potencia recibida en <code>dBm</code>${elegida.conexion === "Cable" ? " porque corresponde a un medio guiado por cable (par trenzado / fibra)" : " (los navegadores móviles no exponen el RSRP sin usar la app nativa de Android)"}.
+          En un canal radioeléctrico equivalente de <code>B = ${fmt(bMed, 0)} MHz</code> a <code>${tC} °C</code>, el piso de ruido térmico de Johnson-Nyquist es <code>N = k·T·B = ${fmt(ruido, 1)} dBm (${T.potenciaLegible(T.dbmAmW(ruido))})</code>.
+        </p>
+      </div>
+    `);
+  }
+
+  // Paso 4: Latencia, Jitter y Estándar Tecnológico
+  const maxTec = elegida.tecnologia && T.MAXIMOS[elegida.tecnologia] ? T.MAXIMOS[elegida.tecnologia] : null;
+  const pctEst = maxTec && elegida.bajada_mbps != null ? (100 * elegida.bajada_mbps) / maxTec.mbps : null;
+  pasos.push(`
+    <div class="paso-item" style="border-bottom:none">
+      <div class="paso-head">
+        <span class="paso-titulo">${tieneDbm ? "4" : "2"}. Desempeño de transmisión, retardo y tecnología</span>
+        <span class="paso-valor">Ping ${fmt(elegida.latencia_ms, 0)} ms · Jitter ${fmt(elegida.jitter_ms, 1)} ms</span>
+      </div>
+      <p class="paso-desc">
+        Obtuviste <b>${fmt(elegida.bajada_mbps)} Mbps</b> de bajada y <b>${fmt(elegida.subida_mbps)} Mbps</b> de subida (asimetría típica del enlace de acceso).
+        La latencia de ida y vuelta (<code>${fmt(elegida.latencia_ms, 0)} ms</code>) y su fluctuación o <i>jitter</i> (<code>${fmt(elegida.jitter_ms, 1)} ms</code>) determinan la estabilidad en tráfico interactivo y voz/video en tiempo real.
+        ${maxTec ? `<br>Para la generación móvil declarada (<b>${esc(elegida.tecnologia)}</b>), la cota comercial del estándar es <b>${esc(maxTec.texto)}</b> (tu medición alcanzó el <b>${fmt(pctEst, 1)} %</b> del pico nominal de ${fmt(maxTec.mbps, 0)} Mbps).` : ""}
+      </p>
+    </div>
+  `);
+
+  $("desgloseIndiv").innerHTML = pasos.join("");
+
+  // Gráfico: Curva teórica de Shannon + resto del grupo + TU MEDICIÓN destacada
   const conSenal = lista.filter((d) => d.senal_dbm != null && d.bajada_mbps != null);
   const r = T.pearson(conSenal.map((d) => d.senal_dbm), conSenal.map((d) => d.bajada_mbps));
-  $("tPearson").textContent = r == null
-    ? "Se requieren al menos 3 mediciones con intensidad en dBm para calcular el coeficiente de correlación lineal."
-    : `Coeficiente de correlación de Pearson r = ${fmt(r, 2)} (n = ${conSenal.length}). ` +
-      (Math.abs(r) < 0.3 ? "Correlación débil." : Math.abs(r) < 0.7 ? "Correlación moderada." : "Correlación fuerte.") +
-      (r > 0 ? " A mayor potencia recibida (dBm menos negativo), mayor caudal de bajada." : "");
+  $("tPearson").textContent = tieneDbm
+    ? `El punto destacado muestra tu medición (${fmt(elegida.senal_dbm, 0)} dBm, ${fmt(elegida.bajada_mbps)} Mbps) comparada con la cota teórica de Shannon y el resto de las muestras.` +
+      (r != null ? ` Correlación grupal de Pearson r = ${fmt(r, 2)} (n = ${conSenal.length}).` : "")
+    : `La medición seleccionada no registra potencia en dBm para graficar su coordenada X; elegí una medición con señal en dBm en el selector superior para verla posicionada sobre la curva.`;
 
-  const muted = css("--muted"), linea = css("--line"), fg = css("--fg"), accent = css("--accent");
+  const muted = css("--muted"), linea = css("--line"), fg = css("--fg"), accent = css("--accent"), amber = css("--amber");
   if (graficos.gDisp) graficos.gDisp.destroy();
-  const empresas = [...new Set(conSenal.map((d) => d.empresa || "Sin dato"))];
-  const curvaRef = T.curvaShannon(B, tC, $("fConexion").value || "Datos móviles", -115, -50, 3);
+  const modoCurva = elegida.conexion === "WiFi" ? "WiFi" : "Datos móviles";
+  const curvaRef = T.curvaShannon(bMed, tC, modoCurva, -115, -50, 3);
 
-  const datasets = empresas.map((e, i) => ({
-    type: "scatter",
-    label: e,
-    backgroundColor: SERIE[i % SERIE.length],
-    borderColor: "#FFFFFF",
-    borderWidth: 1.5,
-    pointRadius: (ctx) => {
-      const v = ctx.raw?.y || 0;
-      return v > 120 ? 7 : v > 50 ? 5.5 : 4.5;
-    },
-    data: conSenal.filter((d) => (d.empresa || "Sin dato") === e).map((d) => ({ x: d.senal_dbm, y: d.bajada_mbps })),
-  }));
-
-  if (conSenal.length > 0) {
+  const datasets = [];
+  if (tieneDbm && elegida.bajada_mbps != null) {
     datasets.push({
-      type: "line",
-      label: `Tendencia teórica Shannon (${B} MHz)`,
-      data: curvaRef,
-      borderColor: accent,
-      borderDash: [5, 4],
-      borderWidth: 2,
-      pointRadius: 0,
-      fill: false,
-      tension: 0.25,
+      type: "scatter",
+      label: `Tu medición (${nombreEq})`,
+      backgroundColor: amber,
+      borderColor: "#FFFFFF",
+      borderWidth: 2.5,
+      pointRadius: 9,
+      pointHoverRadius: 11,
+      data: [{ x: elegida.senal_dbm, y: elegida.bajada_mbps }],
     });
   }
+
+  const otros = conSenal.filter((d) => String(d.id) !== String(elegida.id));
+  if (otros.length > 0) {
+    datasets.push({
+      type: "scatter",
+      label: `Otras mediciones (${otros.length})`,
+      backgroundColor: muted,
+      borderColor: "#FFFFFF",
+      borderWidth: 1,
+      pointRadius: 5,
+      data: otros.map((d) => ({ x: d.senal_dbm, y: d.bajada_mbps })),
+    });
+  }
+
+  datasets.push({
+    type: "line",
+    label: `Cota teórica Shannon (${fmt(bMed, 0)} MHz · ${modoCurva})`,
+    data: curvaRef,
+    borderColor: accent,
+    borderDash: [5, 4],
+    borderWidth: 2,
+    pointRadius: 0,
+    fill: false,
+    tension: 0.25,
+  });
 
   graficos.gDisp = new Chart($("gDisp"), {
     type: "scatter",
@@ -800,31 +1052,7 @@ function teoria(lista) {
     },
   });
 
-  // Shannon por empresa (solo mediciones con dBm)
-  const porEmp = agrupar(conSenal, "empresa");
-  const filasS = Object.entries(porEmp).map(([emp, arr]) => {
-    const bDe = (d) => (d.ancho_mhz != null ? d.ancho_mhz : B);
-    const snrs = arr.map((d) => (d.sinr_db != null ? d.sinr_db : T.snrDb(d.senal_dbm, bDe(d), tC, d.conexion)));
-    const dbm = resumen(arr.map((d) => d.senal_dbm)).media;
-    const snr = resumen(snrs).media;
-    const c = resumen(snrs.map((s, i) => T.shannonMbps(bDe(arr[i]), s))).media;
-    const med = resumen(arr.map((d) => d.bajada_mbps)).media;
-    const pct = (100 * med) / c;
-    return `<tr><td><b>${esc(emp)}</b></td><td class="num">${arr.length}</td><td class="num">${fmt(dbm)}</td><td class="num">${fmt(snr)}</td><td class="num">${fmt(c, 0)}</td><td class="num">${fmt(med)}</td><td class="num">${fmt(pct, 0)} %</td></tr>`;
-  });
-  $("tablaShannon").innerHTML = `<thead><tr><th>Empresa</th><th class="num">n</th><th class="num">Señal (dBm)</th><th class="num">SNR (dB)</th><th class="num">C Shannon (Mbps)</th><th class="num">Bajada real</th><th class="num">Eficiencia</th></tr></thead>
-    <tbody>${filasS.join("") || '<tr><td colspan="7" class="muted">Sin mediciones con señal en dBm para este filtro.</td></tr>'}</tbody>`;
-
-  // Tecnología vs máximo teórico (Unidad 7)
-  const movil = lista.filter((d) => d.conexion === "Datos móviles" && T.MAXIMOS[d.tecnologia]);
-  const filasT = ["2G", "3G", "4G", "5G"].map((tec) => {
-    const arr = movil.filter((d) => d.tecnologia === tec);
-    if (!arr.length) return "";
-    const s = resumen(arr.map((d) => d.bajada_mbps));
-    return `<tr><td><b>${esc(tec)}</b></td><td>${esc(T.MAXIMOS[tec].texto)}</td><td class="num">${arr.length}</td><td class="num">${fmt(s.media)}</td><td class="num">${fmt(s.max)}</td></tr>`;
-  });
-  $("tablaTec").innerHTML = `<thead><tr><th>Tec.</th><th>Máximo teórico</th><th class="num">n</th><th class="num">Bajada media</th><th class="num">Bajada máx.</th></tr></thead>
-    <tbody>${filasT.join("") || '<tr><td colspan="5" class="muted">Sin mediciones móviles con tecnología indicada.</td></tr>'}</tbody>`;
+  resaltarFilaSeleccionada(idActual);
 }
 
 function histograma(vals, k) {
@@ -925,9 +1153,10 @@ function tablaDatos(lista) {
     ["ubicacion_fuente", "Ubicación"],
   ];
   const ord = [...lista].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-  $("metaTabla").textContent = `${ord.length} registros mostrados`;
+  const idSel = $("selMedicion") ? $("selMedicion").value : "";
+  $("metaTabla").textContent = `${ord.length} registros mostrados · clic en una fila para analizarla`;
   $("tablaDatos").innerHTML = `<thead><tr>${cols.map(([k, t]) => `<th class="${NUMS.includes(k) ? "num" : ""}">${esc(t)}</th>`).join("")}</tr></thead>
-    <tbody>${ord.map((d) => `<tr class="${esEjemplo(d) ? "ejemplo" : ""}">${cols.map(([k]) => {
+    <tbody>${ord.map((d) => `<tr data-id="${esc(d.id)}" class="seleccionable${esEjemplo(d) ? " ejemplo" : ""}${String(d.id) === String(idSel) ? " seleccionada" : ""}">${cols.map(([k]) => {
       let v = d[k];
       if (k === "fecha") {
         v = v ? new Date(v).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }) + (esEjemplo(d) ? " (sim.)" : "") : "";
@@ -964,6 +1193,13 @@ function descargarCSV() {
 
 ["fConexion", "fEmpresa", "fVariable", "fMetrica"].forEach((id) => $(id).addEventListener("change", render));
 ["tB", "tT"].forEach((id) => $(id).addEventListener("input", () => teoria(filtrados())));
+$("selMedicion").addEventListener("change", () => seleccionarMedicion($("selMedicion").value));
+$("tablaDatos").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-id]");
+  if (!tr) return;
+  seleccionarMedicion(tr.dataset.id);
+  $("selMedicion").scrollIntoView({ behavior: "smooth", block: "center" });
+});
 $("btnActualizar").addEventListener("click", cargar);
 $("btnVivo").addEventListener("click", alternarVivo);
 if (location.hash === "#vivo") setTimeout(alternarVivo, 300);

@@ -528,6 +528,7 @@ function guardarLocal(reg) {
     }
     lista.push(reg);
     localStorage.setItem("mediciones", JSON.stringify(lista));
+    if (reg && reg.id) localStorage.setItem("utn_ultima_medicion_id", String(reg.id));
   } catch (e) { /* almacenamiento no disponible */ }
 }
 
