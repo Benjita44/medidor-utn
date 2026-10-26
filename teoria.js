@@ -65,6 +65,44 @@ window.TEORIA = (() => {
     "5G": { texto: "5G NR: varios Gbps", mbps: 1000 },
   };
 
+  // Cálculo de capacidad para canales guiados (Par trenzado UTP Ethernet IEEE 802.3ab 1000BASE-T / 100BASE-TX)
+  // Combina el Teorema de Nyquist (C = 2·B·log2(M)) y el Teorema de Shannon-Hartley (C = B·log2(1 + S/N)),
+  // más el despeje inverso de la SNR mínima requerida por el caudal medido.
+  function calcularCable(bajadaMbps, anchoMHz, tempC = 25) {
+    // En 1000BASE-T (Cat 5e / Cat 6) se usan 4 pares trenzados de 62,5 MHz c/u (B agregado = 250 MHz) y PAM-5 (M = 5 niveles).
+    const bEfectivo = anchoMHz && anchoMHz > 0 ? anchoMHz : 250;
+    const pares = 4;
+    const bPorPar = bEfectivo / pares;
+    const nivelesM = 5; // Modulación 4D-PAM5 (±1 V, ±0.5 V, 0 V)
+    const snrDisenoDb = 24.0; // SNR típica en el receptor ecualizado frente a diafonía NEXT/FEXT para BER < 10^-10
+    const cNyquist = 2 * bEfectivo * Math.log2(nivelesM); // C_Nyquist = 2·B·log2(M) => ~1161 Mbps brutos en 250 MHz (1000 Mbps netos con FEC Trellis)
+    const cEstándar = 1000; // 1000BASE-T nominal [Mbps]
+    const cShannon = shannonMbps(bEfectivo, snrDisenoDb);
+    const ruidoTermico = ruidoTermicoDbm(bEfectivo, tempC);
+
+    // Despeje inverso de Shannon: R = B·log2(1 + S/N) => S/N = 2^(R/B) - 1
+    let snrMinDb = null;
+    if (bajadaMbps != null && bajadaMbps > 0 && bEfectivo > 0) {
+      const snrLin = Math.pow(2, bajadaMbps / bEfectivo) - 1;
+      if (snrLin > 0) snrMinDb = 10 * Math.log10(snrLin);
+    }
+
+    return {
+      estandar: "IEEE 802.3ab (1000BASE-T · Cat 5e/6)",
+      modulacion: "4D-PAM5 (5 niveles, ±1 V en 100 Ω)",
+      pares,
+      bEfectivo,
+      bPorPar,
+      nivelesM,
+      snrDisenoDb,
+      cNyquist,
+      cEstandar: cEstándar,
+      cShannon,
+      ruidoTermico,
+      snrMinDb,
+    };
+  }
+
   // Correlación lineal de Pearson
   function pearson(xs, ys) {
     const n = xs.length;
@@ -98,6 +136,7 @@ window.TEORIA = (() => {
     curvaShannon,
     calidad,
     MAXIMOS,
+    calcularCable,
     pearson,
     limpiarVersionSO,
   };

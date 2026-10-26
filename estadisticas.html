@@ -406,7 +406,7 @@
       </div>
       <div class="campo">
         <label for="tB">Ancho de banda del canal B (MHz)</label>
-        <input id="tB" type="number" min="1" max="400" value="20">
+        <input id="tB" type="number" min="1" max="1000" value="20">
       </div>
       <div class="campo">
         <label for="tT">Temperatura ambiente T (°C)</label>
@@ -798,6 +798,7 @@ function etiquetaMedicion(d, esTuya) {
 function seleccionarMedicion(id) {
   if (!id) return;
   $("selMedicion").value = String(id);
+  $("tB").dataset.manual = "0";
   try { localStorage.setItem("utn_ultima_medicion_id", String(id)); } catch (e) {}
   teoria(filtrados());
   resaltarFilaSeleccionada(id);
@@ -841,7 +842,11 @@ function teoria(lista) {
     return `<option value="${esc(d.id)}"${String(d.id) === String(idActual) ? " selected" : ""}>${esc(etiquetaMedicion(d, esTuya))}</option>`;
   }).join("");
 
-  const bMed = elegida.ancho_mhz != null ? elegida.ancho_mhz : (parseFloat($("tB").value) || 20);
+  const esCable = elegida.conexion === "Cable";
+  if ($("tB").dataset.manual !== "1" && elegida.ancho_mhz == null) {
+    $("tB").value = esCable ? "250" : "20";
+  }
+  const bMed = elegida.ancho_mhz != null ? elegida.ancho_mhz : (parseFloat($("tB").value) || (esCable ? 250 : 20));
   const temp = parseFloat($("tT").value);
   const tC = Number.isNaN(temp) ? 25 : temp;
   const ruido = T.ruidoTermicoDbm(bMed, tC);
@@ -941,6 +946,64 @@ function teoria(lista) {
         </p>
       </div>
     `);
+  } else if (esCable && T.calcularCable) {
+    const cab = T.calcularCable(elegida.bajada_mbps, bMed, tC);
+    const eficSh = elegida.bajada_mbps != null && cab.cShannon > 0 ? (100 * elegida.bajada_mbps) / cab.cShannon : null;
+    const eficNy = elegida.bajada_mbps != null && cab.cNyquist > 0 ? (100 * elegida.bajada_mbps) / cab.cNyquist : null;
+
+    $("indDbm").textContent = "4D-PAM5 (±1 V)";
+    $("indMw").textContent = "4 pares UTP (100 Ω) · medio guiado";
+    $("indSnr").textContent = `${fmt(cab.snrDisenoDb, 1)} dB`;
+    $("indSnrTipo").textContent = cab.snrMinDb != null
+      ? `Diseño cable (SNR mín. p/ tu bajada: ${fmt(cab.snrMinDb, 1)} dB)`
+      : `SNR operativa frente a NEXT/FEXT`;
+    $("indShannon").textContent = `${fmt(cab.cShannon, 0)} Mbps`;
+    $("indShannonSub").textContent = `Nyquist (M=${cab.nivelesM}): ${fmt(cab.cNyquist, 0)} Mbps`;
+    $("indEfic").textContent = eficSh != null ? `${fmt(eficSh, 1)} %` : "—";
+    $("indBajadaReal").textContent = `Bajada real: ${fmt(elegida.bajada_mbps)} Mbps (${eficNy != null ? fmt(eficNy, 1) + " % Nyquist" : "—"})`;
+
+    pasos.push(`
+      <div class="paso-item">
+        <div class="paso-head">
+          <span class="paso-titulo">1. Medio guiado, codificación de línea y Teorema de Nyquist</span>
+          <span class="paso-valor">C_Nyquist = ${fmt(cab.cNyquist, 0)} Mbps (${esc(cab.modulacion)})</span>
+        </div>
+        <p class="paso-desc">
+          En un enlace guiado por cable (${esc(cab.estandar)}), la señal viaja confinada en <b>${cab.pares} pares trenzados balanceados de 100 Ω</b> mediante pulsos de tensión discretos (<code>M = ${cab.nivelesM}</code> niveles), por lo que no aplica la potencia de radiación libre en <code>dBm</code>.
+          Aplicando el <b>Teorema de Nyquist</b> sobre un ancho de banda agregado de <code>B = ${fmt(bMed, 0)} MHz</code> (${cab.pares} × ${fmt(cab.bPorPar, 1)} MHz):
+          <code>C_Nyquist = 2 · B · log₂(${cab.nivelesM}) = ${fmt(cab.cNyquist, 0)} Mbps</code> brutos (que entregan <b>${fmt(cab.cEstandar, 0)} Mbps</b> nominales tras la codificación correctora FEC Trellis).
+        </p>
+      </div>
+    `);
+
+    pasos.push(`
+      <div class="paso-item">
+        <div class="paso-head">
+          <span class="paso-titulo">2. Ruido térmico, diafonía (NEXT/FEXT) y SNR inversa</span>
+          <span class="paso-valor">SNR diseño ≈ ${fmt(cab.snrDisenoDb, 1)} dB${cab.snrMinDb != null ? ` · SNR mín. requerida = ${fmt(cab.snrMinDb, 1)} dB` : ""}</span>
+        </div>
+        <p class="paso-desc">
+          El piso de ruido térmico de Johnson-Nyquist en <code>B = ${fmt(bMed, 0)} MHz</code> a <code>${tC} °C</code> es <code>N = k·T·B = ${fmt(ruido, 1)} dBm</code>, pero en cables multipar el limitante dominante es la <b>diafonía entre pares (NEXT/FEXT)</b> y la atenuación del cobre, fijando una relación señal a ruido operativa de diseño de <code>SNR ≈ ${fmt(cab.snrDisenoDb, 1)} dB (S/N ≈ 251)</code> para garantizar <code>BER &lt; 10⁻¹⁰</code>.
+          ${cab.snrMinDb != null
+            ? `<br>Despejando de la ecuación de Shannon tu velocidad real medida (<code>R = ${fmt(elegida.bajada_mbps)} Mbps</code>), la relación señal a ruido mínima teórica requerida es <code>SNR_mín = 10·log₁₀(2^(R/B) − 1) = ${fmt(cab.snrMinDb, 1)} dB</code>.`
+            : ""}
+        </p>
+      </div>
+    `);
+
+    pasos.push(`
+      <div class="paso-item">
+        <div class="paso-head">
+          <span class="paso-titulo">3. Teorema de Shannon-Hartley en canal guiado vs. caudal real</span>
+          <span class="paso-valor">C = ${fmt(cab.cShannon, 0)} Mbps · Aprovechamiento: ${eficSh != null ? fmt(eficSh, 1) + " %" : "—"}</span>
+        </div>
+        <p class="paso-desc">
+          Evaluando el <b>Teorema de Shannon-Hartley</b> con <code>B = ${fmt(bMed, 0)} MHz</code> y <code>SNR = ${fmt(cab.snrDisenoDb, 1)} dB</code>:
+          <code>C = B · log₂(1 + S/N) = ${fmt(cab.cShannon, 0)} Mbps</code>.
+          Tu velocidad de descarga obtenida (<b>${fmt(elegida.bajada_mbps)} Mbps</b>) representa el <b>${eficSh != null ? fmt(eficSh, 1) : "—"} %</b> de la capacidad de Shannon del medio físico y el <b>${eficNy != null ? fmt(eficNy, 1) : "—"} %</b> de la capacidad de Nyquist. En enlaces guiados, la diferencia con la cota física suele deberse al límite comercial del plan contratado al proveedor (ISP) y no a pérdidas en el cable local.
+        </p>
+      </div>
+    `);
   } else {
     $("indDbm").textContent = "Sin dBm";
     $("indMw").textContent = elegida.conexion === "Cable" ? "Enlace guiado (Ethernet)" : "No reportado en la carga";
@@ -958,7 +1021,7 @@ function teoria(lista) {
           <span class="paso-valor">${esc(elegida.conexion || "Enlace")} ${esc(elegida.tecnologia || "")}</span>
         </div>
         <p class="paso-desc">
-          Esta medición no incluye el valor de potencia recibida en <code>dBm</code>${elegida.conexion === "Cable" ? " porque corresponde a un medio guiado por cable (par trenzado / fibra)" : " (los navegadores móviles no exponen el RSRP sin usar la app nativa de Android)"}.
+          Esta medición no incluye el valor de potencia recibida en <code>dBm</code>.
           En un canal radioeléctrico equivalente de <code>B = ${fmt(bMed, 0)} MHz</code> a <code>${tC} °C</code>, el piso de ruido térmico de Johnson-Nyquist es <code>N = k·T·B = ${fmt(ruido, 1)} dBm (${T.potenciaLegible(T.dbmAmW(ruido))})</code>.
         </p>
       </div>
@@ -971,7 +1034,7 @@ function teoria(lista) {
   pasos.push(`
     <div class="paso-item" style="border-bottom:none">
       <div class="paso-head">
-        <span class="paso-titulo">${tieneDbm ? "4" : "2"}. Desempeño de transmisión, retardo y tecnología</span>
+        <span class="paso-titulo">${tieneDbm || esCable ? "4" : "2"}. Desempeño de transmisión, retardo y tecnología</span>
         <span class="paso-valor">Ping ${fmt(elegida.latencia_ms, 0)} ms · Jitter ${fmt(elegida.jitter_ms, 1)} ms</span>
       </div>
       <p class="paso-desc">
@@ -1001,6 +1064,17 @@ function teoria(lista) {
     dataBar.push(cTeo);
     bgBar.push(accent + "D9");
     borderBar.push(accent);
+  } else if (esCable && T.calcularCable) {
+    const cab = T.calcularCable(elegida.bajada_mbps, bMed, tC);
+    labelsBar.push(`Capacidad Shannon (${fmt(bMed, 0)} MHz)`);
+    dataBar.push(Math.round(cab.cShannon * 10) / 10);
+    bgBar.push(accent + "D9");
+    borderBar.push(accent);
+
+    labelsBar.push(`Capacidad Nyquist (PAM-5)`);
+    dataBar.push(Math.round(cab.cNyquist * 10) / 10);
+    bgBar.push(muted + "99");
+    borderBar.push(muted);
   } else if (maxTec) {
     labelsBar.push(`Cota teórica ${elegida.tecnologia}`);
     dataBar.push(maxTec.mbps);
@@ -1027,6 +1101,8 @@ function teoria(lista) {
 
   $("tPearson").textContent = tieneDbm
     ? `Comparación directa en Mbps entre el límite físico de Shannon-Hartley para tu señal (${fmt(dbm, 0)} dBm${dbmEstimado ? " estimada" : ""} en ${fmt(bMed, 0)} MHz) y el caudal real medido en tu dispositivo.`
+    : esCable
+    ? `Comparación en Mbps para tu enlace guiado por cable entre la capacidad de Shannon-Hartley (SNR ≈ 24 dB en ${fmt(bMed, 0)} MHz), la capacidad de Nyquist (4D-PAM5) y las velocidades reales medidas.`
     : `Comparación del caudal real de bajada y subida obtenido en tu dispositivo${maxTec ? ` frente a la cota nominal de ${elegida.tecnologia}` : ""}.`;
 
   graficos.gDisp = new Chart($("gDisp"), {
@@ -1211,7 +1287,11 @@ function descargarCSV() {
 }
 
 ["fConexion", "fEmpresa", "fVariable", "fMetrica"].forEach((id) => $(id).addEventListener("change", render));
-["tB", "tT"].forEach((id) => $(id).addEventListener("input", () => teoria(filtrados())));
+$("tB").addEventListener("input", () => {
+  $("tB").dataset.manual = "1";
+  teoria(filtrados());
+});
+$("tT").addEventListener("input", () => teoria(filtrados()));
 $("selMedicion").addEventListener("change", () => seleccionarMedicion($("selMedicion").value));
 $("tablaDatos").addEventListener("click", (e) => {
   const tr = e.target.closest("tr[data-id]");

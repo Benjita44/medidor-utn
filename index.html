@@ -667,7 +667,17 @@ function analizar() {
   const partes = [];
   const dbm = parseFloat($("senal_dbm").value);
   const conexion = $("conexion").value || "Datos móviles";
-  if (!Number.isNaN(dbm)) {
+  if (conexion === "Cable" && T.calcularCable) {
+    const cab = T.calcularCable(medicion.bajada_mbps, 250, 25);
+    partes.push(`<b>Medio guiado (${esc(cab.estandar)}):</b> señal diferencial por par trenzado (${esc(cab.modulacion)}) sobre ${cab.pares} pares × ${esc(f(cab.bPorPar))} MHz (<code>B = ${esc(f(cab.bEfectivo, 0))} MHz</code>).`);
+    partes.push(`<b>Capacidad de Nyquist:</b> <code>C_Nyquist = 2·B·log₂(${cab.nivelesM}) ≈ ${esc(f(cab.cNyquist, 0))} Mbps</code> brutos (${esc(f(cab.cEstandar, 0))} Mbps netos tras codificación FEC Trellis).`);
+    partes.push(`<b>Capacidad de Shannon-Hartley:</b> con <code>SNR ≈ ${esc(f(cab.snrDisenoDb, 0))} dB</code> frente a atenuación y diafonía (NEXT/FEXT), <code>C = B·log₂(1 + S/N) ≈ ${esc(f(cab.cShannon, 0))} Mbps</code>.`);
+    if (medicion.bajada_mbps) {
+      const pctSh = (100 * medicion.bajada_mbps) / cab.cShannon;
+      const pctEth = (100 * medicion.bajada_mbps) / cab.cEstandar;
+      partes.push(`Tu bajada medida (<b>${esc(f(medicion.bajada_mbps))} Mbps</b>) representa el <b>${esc(f(pctSh, 1))} %</b> del límite de Shannon del cable (${esc(f(pctEth, 1))} % de la tasa Gigabit Ethernet)${cab.snrMinDb != null ? `, requiriendo una SNR mínima teórica de <b>${esc(f(cab.snrMinDb, 1))} dB</b>` : ""}.`);
+    }
+  } else if (!Number.isNaN(dbm)) {
     const ruido = T.ruidoTermicoDbm(20, 25);
     const snr = T.snrDb(dbm, 20, 25, conexion);
     const c = T.shannonMbps(20, snr);
