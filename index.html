@@ -144,9 +144,9 @@
           <input id="so" autocomplete="off" required>
         </div>
         <div class="campo">
-          <label for="senal_dbm">Potencia recibida en dBm (opcional)</label>
-          <input id="senal_dbm" type="number" inputmode="numeric" min="-140" max="-30" placeholder="Ej.: -92">
-          <span class="ayuda">En Android: Ajustes → Acerca del teléfono → Estado → Estado de SIM → Intensidad de la señal.</span>
+          <label for="senal_dbm">Potencia recibida en dBm</label>
+          <input id="senal_dbm" type="number" inputmode="numeric" min="-140" max="-30" placeholder="Se calcula al medir (o ingresá manual)">
+          <span class="ayuda" id="ayudaSenal">Se obtiene o estima automáticamente al ejecutar la medición (podés editarlo si tenés el valor exacto en Ajustes → Estado de SIM).</span>
         </div>
         <div class="campo">
           <label for="barras">Barras de señal visibles</label>
@@ -324,7 +324,7 @@ async function detectarDispositivo() {
     $("ayudaNombre").textContent = so === "macOS"
       ? "Podés verlo en Ajustes del Sistema → General → Información."
       : "En Windows: Configuración → Sistema → Información → Nombre del dispositivo.";
-    for (const id of ["tecnologia", "senal_dbm", "barras"]) $(id).closest(".campo").hidden = true;
+    $("tecnologia").closest(".campo").hidden = true;
   }
   $("chipSO").textContent = `${so} ${version}`.trim();
   $("marca").value = medicion.marca;
@@ -451,6 +451,68 @@ function ubicar() {
   });
 }
 
+// Obtiene la potencia real en dBm (si corre con el backend local de Windows)
+// o la estima automáticamente a partir del desempeño del radioenlace (bajada, latencia, jitter y NetworkInformation API).
+async function calcularPotenciaDbm(bajada, latencia, jitter) {
+  // 1. Si corre sobre el servidor local en Windows, consultar /api/senal (netsh wlan)
+  try {
+    const r = await fetch("/api/senal", { cache: "no-store" });
+    if (r.ok) {
+      const d = await r.json();
+      if (d && d.ok && typeof d.senal_dbm === "number") {
+        if (!$("conexion").value) {
+          $("conexion").value = "WiFi";
+          pintarConexion("WiFi");
+        }
+        $("senal_dbm").value = String(d.senal_dbm);
+        if (d.barras != null) $("barras").value = String(d.barras);
+        $("ayudaSenal").textContent = `Potencia real leída de la placa WiFi (${d.ssid || "WiFi"} · ${d.banda || d.radio || ""}): ${d.senal_dbm} dBm.`;
+        return;
+      }
+    }
+  } catch (e) { /* servidor estático o remoto */ }
+
+  // 2. Si el usuario ya ingresó manualmente un valor antes, respetarlo salvo que esté vacío o provenga de estimación previa
+  if ($("senal_dbm").dataset.manual === "1" && $("senal_dbm").value !== "") return;
+
+  const con = $("conexion").value || (medicion.tipo_dispositivo === "Computadora" ? "WiFi" : "Datos móviles");
+  if (!$("conexion").value && con) {
+    $("conexion").value = con;
+    pintarConexion(con);
+    sugerirEmpresa();
+  }
+  if (con === "Cable") {
+    $("senal_dbm").value = "";
+    $("barras").value = "";
+    $("ayudaSenal").textContent = "En conexiones guiadas por cable (Ethernet) no aplica potencia de radiofrecuencia en dBm.";
+    return;
+  }
+
+  // Combinar velocidad efectiva de descarga, RTT y estabilidad (jitter) para estimar el nivel de señal (RSSI / RSRP)
+  const nc = navigator.connection;
+  const dlHint = nc && typeof nc.downlink === "number" && nc.downlink > 0 ? (bajada * 0.75 + nc.downlink * 0.25) : bajada;
+  // Índice de calidad de enlace [0..1]
+  const qVel = Math.min(1, Math.max(0, Math.log10(1 + Math.max(0.2, dlHint)) / Math.log10(1 + 150)));
+  const penalLat = Math.min(0.28, Math.max(0, (latencia - 20) / 260) + Math.max(0, (jitter - 5) / 120));
+  const q = Math.min(1, Math.max(0.04, qVel - penalLat * 0.5));
+
+  let dbm, barras;
+  if (con === "WiFi") {
+    // Rango típico WiFi RSSI: -86 dBm (borde de sensibilidad) a -46 dBm (excelente cerca del AP)
+    dbm = Math.round(-86 + q * 40);
+    barras = dbm >= -55 ? 5 : dbm >= -65 ? 4 : dbm >= -74 ? 3 : dbm >= -82 ? 2 : 1;
+  } else {
+    // Rango típico RSRP 4G/5G: -114 dBm (celda débil) a -72 dBm (celda excelente)
+    dbm = Math.round(-114 + q * 42);
+    barras = dbm >= -82 ? 5 : dbm >= -90 ? 4 : dbm >= -98 ? 3 : dbm >= -106 ? 2 : 1;
+  }
+
+  $("senal_dbm").value = String(dbm);
+  $("senal_dbm").dataset.manual = "0";
+  $("barras").value = String(barras);
+  $("ayudaSenal").textContent = `Potencia estimada automáticamente según desempeño del radioenlace (${dbm} dBm · ${barras} barras). Podés ajustarla manualmente si lo deseás.`;
+}
+
 async function medir() {
   const btn = $("btnMedir");
   btn.disabled = true;
@@ -474,6 +536,8 @@ async function medir() {
       latencia_ms: +latencia.toFixed(1),
       jitter_ms: +jitter.toFixed(1),
     });
+
+    await calcularPotenciaDbm(bajada, latencia, jitter);
 
     $("ubicacionTxt").textContent = "Ubicación: solicitando coordenadas GPS…";
     const pos = await ubicar();
@@ -630,19 +694,45 @@ function analizar() {
 }
 
 // ---------- Inicialización ----------
-["senal_dbm", "tecnologia", "conexion"].forEach((id) => $(id).addEventListener("input", analizar));
+$("senal_dbm").addEventListener("input", () => {
+  $("senal_dbm").dataset.manual = $("senal_dbm").value !== "" ? "1" : "0";
+  analizar();
+});
+["tecnologia", "conexion"].forEach((id) => $(id).addEventListener("input", analizar));
 $("empresa").innerHTML = '<option value="">Elegí una opción</option>' + window.EMPRESAS.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join("");
 $("modoDemo").hidden = !!CFG.SCRIPT_URL;
 $("avisoAndroid").hidden = !/Android/i.test(navigator.userAgent);
-$("conexion").addEventListener("change", () => {
-  pintarConexion($("conexion").value);
+$("conexion").addEventListener("change", async () => {
+  const c = $("conexion").value;
+  pintarConexion(c);
   sugerirEmpresa();
+  $("tecnologia").closest(".campo").hidden = c !== "Datos móviles";
+  if (medido) {
+    $("senal_dbm").dataset.manual = "0";
+    await calcularPotenciaDbm(medicion.bajada_mbps || 15, medicion.latencia_ms || 35, medicion.jitter_ms || 5);
+    analizar();
+  }
 });
 $("btnMedir").addEventListener("click", medir);
 $("form").addEventListener("submit", enviar);
 dibujarGauge(0);
 detectarConexion();
 detectarDispositivo().then(detectarISP);
+fetch("/api/senal", { cache: "no-store" })
+  .then((r) => (r.ok ? r.json() : null))
+  .then((d) => {
+    if (d && d.ok && typeof d.senal_dbm === "number") {
+      if (!$("conexion").value) {
+        $("conexion").value = "WiFi";
+        pintarConexion("WiFi");
+      }
+      $("senal_dbm").value = String(d.senal_dbm);
+      if (d.barras != null) $("barras").value = String(d.barras);
+      $("ayudaSenal").textContent = `Potencia real leída de la placa WiFi (${d.ssid || "WiFi"}): ${d.senal_dbm} dBm.`;
+      analizar();
+    }
+  })
+  .catch(() => {});
 </script>
 </body>
 </html>

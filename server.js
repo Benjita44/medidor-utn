@@ -9,6 +9,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { execSync } = require("child_process");
 
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT_DIR = __dirname;
@@ -178,6 +179,49 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "OPTIONS") {
     return responderJSON(res, 200, { ok: true });
+  }
+
+  // ---------- Endpoint de API: /api/senal (lectura real de netsh wlan en Windows) ----------
+  if (url.pathname === "/api/senal" && req.method === "GET") {
+    try {
+      const out = execSync("netsh wlan show interfaces", { encoding: "utf8", timeout: 2500 });
+      const info = {};
+      for (const line of out.split(/\r?\n/)) {
+        const idx = line.indexOf(":");
+        if (idx <= 0) continue;
+        const k = line.slice(0, idx).trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        const v = line.slice(idx + 1).trim();
+        if (k === "estado" || k === "state") info.estado = v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        else if (k === "ssid") info.ssid = v;
+        else if (k === "banda" || k === "band") info.banda = v;
+        else if (k === "canal" || k === "channel") info.canal = v;
+        else if (k === "tipo de radio" || k === "radio type") info.radio = v;
+        else if (k === "senal" || k === "signal") info.senal_pct = parseInt(v.replace("%", ""), 10);
+        else if (k === "rssi") info.rssi = parseInt(v, 10);
+      }
+      if (info.estado && (info.estado.startsWith("conectado") || info.estado.startsWith("connected"))) {
+        const dbm = Number.isFinite(info.rssi)
+          ? info.rssi
+          : Number.isFinite(info.senal_pct)
+          ? Math.round(info.senal_pct / 2 - 100)
+          : null;
+        const barras = dbm == null ? null : dbm >= -55 ? 5 : dbm >= -65 ? 4 : dbm >= -75 ? 3 : dbm >= -82 ? 2 : dbm >= -90 ? 1 : 0;
+        return responderJSON(res, 200, {
+          ok: true,
+          fuente: "netsh-wlan",
+          conexion: "WiFi",
+          senal_dbm: dbm,
+          barras,
+          ssid: info.ssid || "",
+          radio: info.radio || "",
+          banda: info.banda || "",
+          canal: info.canal || "",
+        });
+      }
+      return responderJSON(res, 200, { ok: false, motivo: "wifi-desconectado" });
+    } catch (e) {
+      return responderJSON(res, 200, { ok: false, motivo: "no-disponible" });
+    }
   }
 
   // ---------- Endpoint de API: /api/mediciones ----------

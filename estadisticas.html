@@ -862,10 +862,19 @@ function teoria(lista) {
   `;
 
   const pasos = [];
-  const tieneDbm = elegida.senal_dbm != null && !Number.isNaN(elegida.senal_dbm);
+  let dbm = elegida.senal_dbm != null && !Number.isNaN(elegida.senal_dbm) ? elegida.senal_dbm : null;
+  let dbmEstimado = false;
+  if (dbm == null && elegida.conexion !== "Cable" && elegida.bajada_mbps != null) {
+    const qVel = Math.min(1, Math.max(0, Math.log10(1 + Math.max(0.2, elegida.bajada_mbps)) / Math.log10(1 + 150)));
+    const lat = elegida.latencia_ms || 35, jit = elegida.jitter_ms || 5;
+    const penal = Math.min(0.28, Math.max(0, (lat - 20) / 260) + Math.max(0, (jit - 5) / 120));
+    const q = Math.min(1, Math.max(0.04, qVel - penal * 0.5));
+    dbm = elegida.conexion === "WiFi" ? Math.round(-86 + q * 40) : Math.round(-114 + q * 42);
+    dbmEstimado = true;
+  }
+  const tieneDbm = dbm != null && !Number.isNaN(dbm);
 
   if (tieneDbm) {
-    const dbm = elegida.senal_dbm;
     const mw = T.dbmAmW(dbm);
     const mwTxt = T.potenciaLegible(mw);
     const cal = T.calidad(dbm, elegida.conexion);
@@ -879,7 +888,7 @@ function teoria(lista) {
     const efic = elegida.bajada_mbps != null && cShannon > 0 ? (100 * elegida.bajada_mbps) / cShannon : null;
 
     $("indDbm").textContent = `${fmt(dbm, 0)} dBm`;
-    $("indMw").textContent = `${mwTxt} · calidad ${cal.toLowerCase()}`;
+    $("indMw").textContent = `${mwTxt} · calidad ${cal.toLowerCase()}${dbmEstimado ? " (est.)" : ""}`;
     $("indSnr").textContent = `${fmt(snrEfectivo, 1)} dB`;
     $("indSnrTipo").textContent = elegida.sinr_db != null ? "SINR real medida por el módem" : `SNR estimada (S − N en ${fmt(bMed, 0)} MHz)`;
     $("indShannon").textContent = `${fmt(cShannon, 0)} Mbps`;
@@ -985,7 +994,7 @@ function teoria(lista) {
   const borderBar = [];
 
   if (tieneDbm) {
-    const snrTerm = T.snrDb(elegida.senal_dbm, bMed, tC, elegida.conexion);
+    const snrTerm = T.snrDb(dbm, bMed, tC, elegida.conexion);
     const snrEf = elegida.sinr_db != null ? elegida.sinr_db : snrTerm;
     const cTeo = Math.round(T.shannonMbps(bMed, snrEf) * 10) / 10;
     labelsBar.push(`Capacidad teórica C (${fmt(bMed, 0)} MHz)`);
@@ -1017,8 +1026,8 @@ function teoria(lista) {
   }
 
   $("tPearson").textContent = tieneDbm
-    ? `Comparación directa en Mbps entre el límite físico de Shannon-Hartley para tu señal (${fmt(elegida.senal_dbm, 0)} dBm en ${fmt(bMed, 0)} MHz) y el caudal real medido en tu dispositivo.`
-    : `Comparación del caudal real de bajada y subida obtenido en tu dispositivo${maxTec ? ` frente a la cota nominal de ${elegida.tecnologia}` : ""}. (Registrá desde una red con potencia en dBm para incluir la barra de capacidad de Shannon).`;
+    ? `Comparación directa en Mbps entre el límite físico de Shannon-Hartley para tu señal (${fmt(dbm, 0)} dBm${dbmEstimado ? " estimada" : ""} en ${fmt(bMed, 0)} MHz) y el caudal real medido en tu dispositivo.`
+    : `Comparación del caudal real de bajada y subida obtenido en tu dispositivo${maxTec ? ` frente a la cota nominal de ${elegida.tecnologia}` : ""}.`;
 
   graficos.gDisp = new Chart($("gDisp"), {
     type: "bar",
