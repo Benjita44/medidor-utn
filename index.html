@@ -85,7 +85,6 @@
   <section class="card" aria-labelledby="t-form">
     <div class="card-head">
       <h2 id="t-form">Parámetros de enlace y envío a registro</h2>
-      <span class="card-meta">Unidades 3, 5 y 7</span>
     </div>
     <form id="form" novalidate>
       <div class="campos">
@@ -623,7 +622,7 @@ function analizar() {
   }
   const tec = $("tecnologia").value;
   if (tec && T.MAXIMOS[tec] && $("conexion").value === "Datos móviles") {
-    partes.push(`Máximo teórico de ${esc(tec)} (Unidad 7): ${esc(T.MAXIMOS[tec].texto)}.`);
+    partes.push(`Máximo teórico de ${esc(tec)}: ${esc(T.MAXIMOS[tec].texto)}.`);
   }
   $("analisis").hidden = !partes.length;
   $("analisisTxt").innerHTML = partes.join("<br>");

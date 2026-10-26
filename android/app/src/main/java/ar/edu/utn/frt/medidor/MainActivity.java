@@ -609,7 +609,7 @@ public class MainActivity extends Activity {
         Map<String, String> max = new HashMap<>();
         max.put("2G", "EDGE: hasta 473,6 Kbps"); max.put("3G", "UMTS hasta 2 Mbps · HSPA+ hasta 42 Mbps");
         max.put("4G", "LTE: 100 Mbps a 1 Gbps"); max.put("5G", "5G NR: varios Gbps");
-        if (!wifi && max.containsKey(r.tecnologia)) s.append("\nMáximo teórico de ").append(r.tecnologia).append(" (Unidad 7): ").append(max.get(r.tecnologia));
+        if (!wifi && max.containsKey(r.tecnologia)) s.append("\nMáximo teórico de ").append(r.tecnologia).append(": ").append(max.get(r.tecnologia));
         return s.toString();
     }
 
@@ -757,7 +757,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lpr = new LinearLayout.LayoutParams(-1, -2); lpr.topMargin = dp(10);
         cMed.addView(tResultados, lpr);
 
-        LinearLayout cTeo = tarjeta(raiz, "Análisis teórico (Unidades 3, 5 y 7)");
+        LinearLayout cTeo = tarjeta(raiz, "Análisis teórico");
         tTeoria = texto("Hacé una medición para ver el cálculo.", 14, FG, false);
         tTeoria.setLineSpacing(0, 1.15f);
         cTeo.addView(tTeoria);

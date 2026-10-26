@@ -225,7 +225,7 @@ namespace MedidorSenalUTN
             root.Controls.Add(cardMed);
 
             // 3. Tarjeta de Análisis Teórico (Shannon-Hartley)
-            var cardTeo = CrearTarjeta("ANÁLISIS TEÓRICO DE CANAL (UNIDADES 3, 5 Y 7 · SHANNON-HARTLEY)");
+            var cardTeo = CrearTarjeta("ANÁLISIS TEÓRICO DE CANAL (SHANNON-HARTLEY)");
             lblTeoria = new Label
             {
                 Text = "Iniciá una medición para calcular el piso de ruido térmico (N = kTB), la relación señal a ruido (SNR) y la capacidad límite de Shannon C = B·log₂(1 + S/N).",

@@ -338,7 +338,7 @@
 
   <section class="card" aria-labelledby="t-teoria">
     <div class="card-head">
-      <h2 id="t-teoria">Relación con la teoría de la cátedra (Unidades 3, 5 y 7)</h2>
+      <h2 id="t-teoria">Relación con la teoría de la cátedra</h2>
       <span class="card-meta">Johnson-Nyquist · RSRP · Límite de Shannon-Hartley</span>
     </div>
     <div class="teoria-controles">
@@ -369,7 +369,7 @@
         </div>
         <div>
           <div class="card-head" style="padding-bottom:6px;margin-bottom:8px">
-            <h2>Velocidad medida vs. máximo teórico por generación (Unidad 7)</h2>
+            <h2>Velocidad medida vs. máximo teórico por generación</h2>
           </div>
           <div class="scroll-x"><table id="tablaTec"></table></div>
         </div>
@@ -823,7 +823,7 @@ function teoria(lista) {
     const s = resumen(arr.map((d) => d.bajada_mbps));
     return `<tr><td><b>${esc(tec)}</b></td><td>${esc(T.MAXIMOS[tec].texto)}</td><td class="num">${arr.length}</td><td class="num">${fmt(s.media)}</td><td class="num">${fmt(s.max)}</td></tr>`;
   });
-  $("tablaTec").innerHTML = `<thead><tr><th>Tec.</th><th>Máximo teórico (Unidad 7)</th><th class="num">n</th><th class="num">Bajada media</th><th class="num">Bajada máx.</th></tr></thead>
+  $("tablaTec").innerHTML = `<thead><tr><th>Tec.</th><th>Máximo teórico</th><th class="num">n</th><th class="num">Bajada media</th><th class="num">Bajada máx.</th></tr></thead>
     <tbody>${filasT.join("") || '<tr><td colspan="5" class="muted">Sin mediciones móviles con tecnología indicada.</td></tr>'}</tbody>`;
 }
 
