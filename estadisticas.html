@@ -433,7 +433,7 @@
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
         <div class="card-head" style="padding-bottom:6px">
-          <h2>Tu medición frente a la curva límite de Shannon</h2>
+          <h2>Capacidad teórica del canal vs. velocidad real obtenida</h2>
         </div>
         <div class="lienzo"><canvas id="gDisp"></canvas></div>
         <p class="small muted" id="tPearson" style="margin:0"></p>
@@ -975,76 +975,86 @@ function teoria(lista) {
 
   $("desgloseIndiv").innerHTML = pasos.join("");
 
-  // Gráfico: Curva teórica de Shannon + resto del grupo + TU MEDICIÓN destacada
-  const conSenal = lista.filter((d) => d.senal_dbm != null && d.bajada_mbps != null);
-  const r = T.pearson(conSenal.map((d) => d.senal_dbm), conSenal.map((d) => d.bajada_mbps));
-  $("tPearson").textContent = tieneDbm
-    ? `El punto destacado muestra tu medición (${fmt(elegida.senal_dbm, 0)} dBm, ${fmt(elegida.bajada_mbps)} Mbps) comparada con la cota teórica de Shannon y el resto de las muestras.` +
-      (r != null ? ` Correlación grupal de Pearson r = ${fmt(r, 2)} (n = ${conSenal.length}).` : "")
-    : `La medición seleccionada no registra potencia en dBm para graficar su coordenada X; elegí una medición con señal en dBm en el selector superior para verla posicionada sobre la curva.`;
-
-  const muted = css("--muted"), linea = css("--line"), fg = css("--fg"), accent = css("--accent"), amber = css("--amber");
+  // Gráfico de barras: Capacidad teórica del canal vs. Velocidad real obtenida
+  const muted = css("--muted"), linea = css("--line"), fg = css("--fg"), accent = css("--accent"), green = css("--green"), amber = css("--amber");
   if (graficos.gDisp) graficos.gDisp.destroy();
-  const modoCurva = elegida.conexion === "WiFi" ? "WiFi" : "Datos móviles";
-  const curvaRef = T.curvaShannon(bMed, tC, modoCurva, -115, -50, 3);
 
-  const datasets = [];
-  if (tieneDbm && elegida.bajada_mbps != null) {
-    datasets.push({
-      type: "scatter",
-      label: `Tu medición (${nombreEq})`,
-      backgroundColor: amber,
-      borderColor: "#FFFFFF",
-      borderWidth: 2.5,
-      pointRadius: 9,
-      pointHoverRadius: 11,
-      data: [{ x: elegida.senal_dbm, y: elegida.bajada_mbps }],
-    });
+  const labelsBar = [];
+  const dataBar = [];
+  const bgBar = [];
+  const borderBar = [];
+
+  if (tieneDbm) {
+    const snrTerm = T.snrDb(elegida.senal_dbm, bMed, tC, elegida.conexion);
+    const snrEf = elegida.sinr_db != null ? elegida.sinr_db : snrTerm;
+    const cTeo = Math.round(T.shannonMbps(bMed, snrEf) * 10) / 10;
+    labelsBar.push(`Capacidad teórica C (${fmt(bMed, 0)} MHz)`);
+    dataBar.push(cTeo);
+    bgBar.push(accent + "D9");
+    borderBar.push(accent);
+  } else if (maxTec) {
+    labelsBar.push(`Cota teórica ${elegida.tecnologia}`);
+    dataBar.push(maxTec.mbps);
+    bgBar.push(accent + "D9");
+    borderBar.push(accent);
   }
 
-  const otros = conSenal.filter((d) => String(d.id) !== String(elegida.id));
-  if (otros.length > 0) {
-    datasets.push({
-      type: "scatter",
-      label: `Otras mediciones (${otros.length})`,
-      backgroundColor: muted,
-      borderColor: "#FFFFFF",
-      borderWidth: 1,
-      pointRadius: 5,
-      data: otros.map((d) => ({ x: d.senal_dbm, y: d.bajada_mbps })),
-    });
+  labelsBar.push("Bajada real obtenida");
+  dataBar.push(elegida.bajada_mbps != null ? Math.round(elegida.bajada_mbps * 10) / 10 : 0);
+  bgBar.push(green + "D9");
+  borderBar.push(green);
+
+  labelsBar.push("Subida real obtenida");
+  dataBar.push(elegida.subida_mbps != null ? Math.round(elegida.subida_mbps * 10) / 10 : 0);
+  bgBar.push(amber + "D9");
+  borderBar.push(amber);
+
+  if (tieneDbm && maxTec) {
+    labelsBar.push(`Pico estándar ${elegida.tecnologia}`);
+    dataBar.push(maxTec.mbps);
+    bgBar.push(muted + "99");
+    borderBar.push(muted);
   }
 
-  datasets.push({
-    type: "line",
-    label: `Cota teórica Shannon (${fmt(bMed, 0)} MHz · ${modoCurva})`,
-    data: curvaRef,
-    borderColor: accent,
-    borderDash: [5, 4],
-    borderWidth: 2,
-    pointRadius: 0,
-    fill: false,
-    tension: 0.25,
-  });
+  $("tPearson").textContent = tieneDbm
+    ? `Comparación directa en Mbps entre el límite físico de Shannon-Hartley para tu señal (${fmt(elegida.senal_dbm, 0)} dBm en ${fmt(bMed, 0)} MHz) y el caudal real medido en tu dispositivo.`
+    : `Comparación del caudal real de bajada y subida obtenido en tu dispositivo${maxTec ? ` frente a la cota nominal de ${elegida.tecnologia}` : ""}. (Registrá desde una red con potencia en dBm para incluir la barra de capacidad de Shannon).`;
 
   graficos.gDisp = new Chart($("gDisp"), {
-    type: "scatter",
-    data: { datasets },
+    type: "bar",
+    data: {
+      labels: labelsBar,
+      datasets: [
+        {
+          label: `Velocidad / Capacidad (Mbps) — ${nombreEq}`,
+          data: dataBar,
+          backgroundColor: bgBar,
+          borderColor: borderBar,
+          borderWidth: 1.5,
+          borderRadius: 6,
+          maxBarThickness: 64,
+        },
+      ],
+    },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: fg, font: { family: "Chivo, sans-serif", size: 12 } } },
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${fmt(ctx.parsed.y, 1)} Mbps`,
+          },
+        },
       },
       scales: {
         x: {
-          title: { display: true, text: "Intensidad de Señal (dBm)", color: fg },
-          ticks: { color: muted, font: { family: "JetBrains Mono, monospace" } },
-          grid: { color: linea },
+          ticks: { color: fg, font: { family: "Chivo, sans-serif", weight: "600", size: 12 } },
+          grid: { display: false },
         },
         y: {
           beginAtZero: true,
-          title: { display: true, text: "Velocidad de Bajada (Mbps)", color: fg },
+          title: { display: true, text: "Capacidad / Velocidad (Mbps)", color: fg },
           ticks: { color: muted, font: { family: "JetBrains Mono, monospace" } },
           grid: { color: linea },
         },
