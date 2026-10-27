@@ -288,17 +288,25 @@
 
   <section class="card vivo" id="panelVivo" hidden aria-labelledby="t-vivo">
     <div class="vivo-grid">
-      <div id="qr" aria-label="Código QR para abrir la app de medición"></div>
+      <div class="vivo-col-qr">
+        <div id="qr" aria-label="Código QR para abrir la app de medición"></div>
+        <div style="display:flex;align-items:center;gap:8px;width:100%;max-width:260px">
+          <div class="vivo-url" id="vivoUrl" style="flex:1"></div>
+          <button type="button" class="subtle" id="btnCopiarUrl" title="Copiar enlace" aria-label="Copiar enlace al portapapeles" style="padding:6px 10px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            <span id="txtCopiarUrl">Copiar</span>
+          </button>
+        </div>
+        <div id="vivoAvisoLocal" class="aviso error small" hidden>
+          El código apunta a localhost. Para proyectar en el aula, alojá la carpeta en GitHub Pages o compartí tu IP local (ej. 192.168.x.x).
+        </div>
+      </div>
       <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
         <div class="vivo-head">
           <h2 id="t-vivo">Escaneá el código y medí tu conexión</h2>
           <span class="en-vivo">En vivo · ciclo 8 s</span>
         </div>
-        <div class="vivo-url" id="vivoUrl"></div>
-        <div id="vivoAvisoLocal" class="aviso error small" hidden>
-          El código apunta a esta computadora (localhost), así que los celulares no van a poder abrirlo. Para la presentación en el aula, alojá la carpeta en GitHub Pages o en tu red local.
-        </div>
-        <div class="vivo-cuenta"><b id="vivoN">0</b><span class="muted">mediciones recibidas en la sesión</span></div>
+        <div class="vivo-cuenta"><b id="vivoN" aria-live="polite">0</b><span class="muted">mediciones recibidas en la sesión</span></div>
         <ul id="feed" aria-live="polite"></ul>
       </div>
     </div>
@@ -371,8 +379,26 @@
       <h2 id="t-resumen">Medidas estadísticas por grupo</h2>
       <span class="card-meta" id="metaResumen">Estadística descriptiva muestral</span>
     </div>
-    <div class="scroll-x"><table id="tablaResumen"></table></div>
+    <div class="scroll-x" tabindex="0" role="region" aria-label="Tabla de resumen estadístico"><table id="tablaResumen"></table></div>
     <p class="small muted" style="margin:0">Desvío = desvío estándar muestral (<i>s</i>). Los grupos con menos de 5 mediciones son orientativos.</p>
+  </section>
+
+  <!-- Gráfico de Dispersión Colectivo Señal vs. Caudal y Límite de Claude Shannon -->
+  <section class="card" aria-labelledby="t-shannon-scatter">
+    <div class="card-head">
+      <h2 id="t-shannon-scatter">Dispersión colectiva: Potencia vs. Caudal y Límite de Claude Shannon</h2>
+      <span class="card-meta">Cota Teórica de Shannon-Hartley: C = B · log₂(1 + S/N)</span>
+    </div>
+    <p class="small muted" style="margin:0">
+      Cada punto representa un dispositivo medido en el aula (dBm recibidos vs. Mbps de descarga). La curva punteada superior representa el límite teórico de Shannon-Hartley para el ancho de banda <b>B</b> y temperatura <b>T</b> fijados en el panel inferior.
+    </p>
+    <div class="lienzo" style="height:340px"><canvas id="gShannonScatter"></canvas></div>
+    <div class="leyenda" id="leyendaShannon">
+      <span><i style="background:var(--accent)"></i> Límite de Shannon C(S/N)</span>
+      <span><i style="background:var(--good)"></i> WiFi</span>
+      <span><i style="background:var(--amber)"></i> Datos móviles</span>
+      <span><i style="background:#7C3AED"></i> Cable (Ethernet)</span>
+    </div>
   </section>
 
   <div class="graficos">
@@ -398,6 +424,10 @@
     <div class="card-head">
       <h2 id="t-teoria">Análisis de tu medición con la teoría de la cátedra</h2>
       <span class="card-meta" id="metaTeoriaIndiv">Johnson-Nyquist · RSRP · Límite de Shannon-Hartley</span>
+    </div>
+    <div class="buscador-medicion">
+      <label for="filtroMedicion" class="small muted" style="margin:0">Buscar en lista de alumnos:</label>
+      <input type="search" id="filtroMedicion" placeholder="Escribí nombre, modelo o aula…" autocomplete="off">
     </div>
     <div class="teoria-controles">
       <div class="campo">
@@ -460,7 +490,7 @@
       <h2 id="t-tabla">Registro completo de telemetría</h2>
       <span class="card-meta" id="metaTabla">Orden cronológico inverso</span>
     </div>
-    <div class="scroll-x"><table id="tablaDatos"></table></div>
+    <div class="scroll-x" tabindex="0" role="region" aria-label="Tabla completa de mediciones con desplazamiento horizontal"><table id="tablaDatos"></table></div>
   </section>
 </main>
 
@@ -486,7 +516,14 @@ const graficos = {};
 let mapa, capa;
 
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const SERIE = ["#1849C6", "#117A43", "#C27803", "#7C3AED", "#B93829", "#0891B2", "#475569", "#9A3412"];
+function obtenerSerieColores() {
+  const esOscuro = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  return esOscuro
+    ? ["#6096FF", "#34D399", "#F59E0B", "#A78BFA", "#F87171", "#22D3EE", "#94A3B8", "#FB923C"]
+    : ["#1849C6", "#117A43", "#945300", "#7C3AED", "#B93829", "#0891B2", "#475569", "#9A3412"];
+}
+const SERIE = obtenerSerieColores();
 
 // ---------- Gestión de Tema (Claro / Oscuro) ----------
 function aplicarTema(t) {
@@ -514,6 +551,13 @@ try {
   else aplicarTema(null);
 } catch (e) {}
 $("btnTema").addEventListener("click", alternarTema);
+
+// Escuchar cambios de preferencia de tema del sistema operativo
+try {
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (!localStorage.getItem("utn_tema")) aplicarTema(null);
+  });
+} catch (e) {}
 
 // ---------- Carga y Sanitización de Datos ----------
 function normalizar(f) {
@@ -567,8 +611,9 @@ async function cargar() {
     }
     const esEndpointLocal = CFG.SCRIPT_URL.startsWith("/");
     const hayEjemplo = datos.some(esEjemplo);
-    $("btnEjemplo").hidden = !esEndpointLocal || hayEjemplo;
-    $("btnBorrarEjemplo").hidden = !esEndpointLocal || !hayEjemplo;
+    const permitirSimulacion = esEndpointLocal || !conectadoBackend;
+    $("btnEjemplo").hidden = !permitirSimulacion || hayEjemplo;
+    $("btnBorrarEjemplo").hidden = !permitirSimulacion || !hayEjemplo;
   } else {
     datos = leerLocal().map(normalizar);
     aviso.hidden = false;
@@ -782,6 +827,7 @@ function render() {
   barras("gMarca", marca.map((x) => x[0]), marca.map((x) => x[1]), "Cantidad", true);
 
   teoria(lista);
+  dibujarShannonScatter(lista, parseFloat($("tB").value) || 20, parseFloat($("tT").value) || 25);
   dibujarMapa(lista);
   tablaDatos(lista);
 }
@@ -792,7 +838,7 @@ function etiquetaMedicion(d, esTuya) {
   const red = [d.empresa, d.conexion, d.tecnologia].filter(Boolean).join(" · ");
   const vel = d.bajada_mbps != null ? `${fmt(d.bajada_mbps)} Mbps` : "s/v";
   const dbm = d.senal_dbm != null ? ` · ${d.senal_dbm} dBm` : "";
-  return `${esTuya ? "★ Tu medición · " : ""}${eq} (${red}) — ${vel}${dbm} [${fecha}]`;
+  return `${esTuya ? "★ Tu medición · " : ""}${eq} (${red}) · ${vel}${dbm} [${fecha}]`;
 }
 
 function seleccionarMedicion(id) {
@@ -1048,8 +1094,7 @@ function teoria(lista) {
   $("desgloseIndiv").innerHTML = pasos.join("");
 
   // Gráfico de barras: Capacidad teórica del canal vs. Velocidad real obtenida
-  const muted = css("--muted"), linea = css("--line"), fg = css("--fg"), accent = css("--accent"), green = css("--green"), amber = css("--amber");
-  if (graficos.gDisp) graficos.gDisp.destroy();
+  const muted = css("--muted"), linea = css("--line"), fg = css("--fg"), accent = css("--accent"), good = css("--good") || css("--green"), amber = css("--amber");
 
   const labelsBar = [];
   const dataBar = [];
@@ -1084,8 +1129,8 @@ function teoria(lista) {
 
   labelsBar.push("Bajada real obtenida");
   dataBar.push(elegida.bajada_mbps != null ? Math.round(elegida.bajada_mbps * 10) / 10 : 0);
-  bgBar.push(green + "D9");
-  borderBar.push(green);
+  bgBar.push(good + "D9");
+  borderBar.push(good);
 
   labelsBar.push("Subida real obtenida");
   dataBar.push(elegida.subida_mbps != null ? Math.round(elegida.subida_mbps * 10) / 10 : 0);
@@ -1105,13 +1150,13 @@ function teoria(lista) {
     ? `Comparación en Mbps para tu enlace guiado por cable entre la capacidad de Shannon-Hartley (SNR ≈ 24 dB en ${fmt(bMed, 0)} MHz), la capacidad de Nyquist (4D-PAM5) y las velocidades reales medidas.`
     : `Comparación del caudal real de bajada y subida obtenido en tu dispositivo${maxTec ? ` frente a la cota nominal de ${elegida.tecnologia}` : ""}.`;
 
-  graficos.gDisp = new Chart($("gDisp"), {
+  const configDisp = {
     type: "bar",
     data: {
       labels: labelsBar,
       datasets: [
         {
-          label: `Velocidad / Capacidad (Mbps) — ${nombreEq}`,
+          label: `Velocidad / Capacidad (Mbps) · ${nombreEq}`,
           data: dataBar,
           backgroundColor: bgBar,
           borderColor: borderBar,
@@ -1145,7 +1190,8 @@ function teoria(lista) {
         },
       },
     },
-  });
+  };
+  actualizarOGenerarGrafico("gDisp", configDisp);
 
   resaltarFilaSeleccionada(idActual);
 }
@@ -1160,11 +1206,138 @@ function histograma(vals, k) {
   return { etiquetas, cuentas };
 }
 
+function actualizarOGenerarGrafico(id, config) {
+  const canvas = $(id);
+  if (!canvas) return;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!config.options) config.options = {};
+  if (reduceMotion) {
+    config.options.animation = false;
+  }
+  if (graficos[id] && graficos[id].config && graficos[id].config.type === config.type) {
+    graficos[id].data = config.data;
+    graficos[id].options = config.options;
+    graficos[id].update("none");
+  } else {
+    if (graficos[id]) graficos[id].destroy();
+    graficos[id] = new Chart(canvas, config);
+  }
+}
+
+function dibujarShannonScatter(lista, bMhz = 20, tempC = 25) {
+  if (!window.Chart || !$("gShannonScatter")) return;
+  const T = window.TEORIA;
+  const fg = css("--fg"), muted = css("--muted"), linea = css("--line"), accent = css("--accent");
+  const good = css("--good") || "#117A43", amber = css("--amber") || "#945300";
+
+  // Puntos empíricos medidos por los alumnos
+  const ptsEmpiricos = [];
+  const bgColores = [];
+  const borderColores = [];
+  const metadata = [];
+
+  for (const d of lista) {
+    if (d.bajada_mbps == null) continue;
+    let dbm = d.senal_dbm != null ? +d.senal_dbm : null;
+    if (dbm == null || Number.isNaN(dbm)) {
+      if (d.conexion === "WiFi") dbm = -70;
+      else if (d.conexion === "Datos móviles") dbm = -95;
+      else continue;
+    }
+    ptsEmpiricos.push({ x: dbm, y: Math.round(d.bajada_mbps * 10) / 10 });
+    const col = d.conexion === "WiFi" ? good : d.conexion === "Cable" ? "#7C3AED" : amber;
+    bgColores.push(col + "CC");
+    borderColores.push(col);
+    metadata.push({
+      nombre: d.nombre_dispositivo || [d.marca, d.modelo].filter(Boolean).join(" ") || "Dispositivo",
+      empresa: d.empresa || "",
+      conexion: d.conexion,
+      tec: d.tecnologia || "",
+      dbm,
+      mbps: d.bajada_mbps,
+    });
+  }
+
+  // Curva continua de Shannon C(S/N)
+  const curva = T && T.curvaShannon ? T.curvaShannon(bMhz, tempC, "Datos móviles", -120, -40, 2) : [];
+  const ptsCurva = curva.map((p) => ({ x: p.x, y: p.y }));
+
+  const config = {
+    type: "scatter",
+    data: {
+      datasets: [
+        {
+          label: `Límite Teórico de Shannon C (${bMhz} MHz · ${tempC} °C)`,
+          type: "line",
+          data: ptsCurva,
+          borderColor: accent,
+          backgroundColor: "transparent",
+          borderWidth: 2.5,
+          borderDash: [5, 4],
+          pointRadius: 0,
+          fill: false,
+          tension: 0.25,
+          order: 1,
+        },
+        {
+          label: "Mediciones reales de la clase",
+          type: "scatter",
+          data: ptsEmpiricos,
+          backgroundColor: bgColores,
+          borderColor: borderColores,
+          borderWidth: 1.5,
+          pointRadius: 6,
+          pointHoverRadius: 9,
+          order: 2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              if (ctx.datasetIndex === 0) {
+                return `Cota teórica de Shannon: ${fmt(ctx.parsed.y, 1)} Mbps @ ${ctx.parsed.x} dBm`;
+              }
+              const m = metadata[ctx.dataIndex];
+              if (!m) return `${fmt(ctx.parsed.y, 1)} Mbps @ ${ctx.parsed.x} dBm`;
+              return `${m.nombre} (${m.empresa} · ${m.conexion}): ${fmt(m.mbps, 1)} Mbps (${m.dbm} dBm)`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: "linear",
+          position: "bottom",
+          min: -125,
+          max: -35,
+          title: { display: true, text: "Potencia recibida en dBm (RSSI / RSRP)", color: fg },
+          ticks: { color: muted, font: { family: "JetBrains Mono, monospace" } },
+          grid: { color: linea },
+        },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: "Caudal de descarga (Mbps)", color: fg },
+          ticks: { color: muted, font: { family: "JetBrains Mono, monospace" } },
+          grid: { color: linea },
+        },
+      },
+    },
+  };
+
+  actualizarOGenerarGrafico("gShannonScatter", config);
+}
+
 function barras(id, etiquetas, valores, nombre, multicolor) {
   const fg = css("--fg"), muted = css("--muted"), linea = css("--line"), accent = css("--accent");
-  const colores = multicolor ? etiquetas.map((_, i) => SERIE[i % SERIE.length]) : accent;
-  if (graficos[id]) graficos[id].destroy();
-  graficos[id] = new Chart($(id), {
+  const serie = obtenerSerieColores();
+  const colores = multicolor ? etiquetas.map((_, i) => serie[i % serie.length]) : accent;
+  const config = {
     type: "bar",
     data: {
       labels: etiquetas,
@@ -1187,13 +1360,15 @@ function barras(id, etiquetas, valores, nombre, multicolor) {
         },
       },
     },
-  });
+  };
+  actualizarOGenerarGrafico(id, config);
 }
 
 function colorBajada(v) {
   return v == null ? "#64748B" : v < 5 ? "#B93829" : v < 20 ? "#C27803" : v < 100 ? "#117A43" : "#1849C6";
 }
 
+let mapaAjustado = false;
 function dibujarMapa(lista) {
   if (!window.L) return;
   if (!mapa) {
@@ -1202,6 +1377,9 @@ function dibujarMapa(lista) {
       maxZoom: 19,
       attribution: "© OpenStreetMap",
     }).addTo(mapa);
+    window.addEventListener("resize", () => {
+      if (mapa) mapa.invalidateSize();
+    });
   }
   if (capa) capa.remove();
   capa = L.layerGroup().addTo(mapa);
@@ -1226,7 +1404,10 @@ function dibujarMapa(lista) {
       .addTo(capa);
   }
   $("metaMapa").textContent = `${pts.length} puntos georreferenciados`;
-  if (pts.length) mapa.fitBounds(pts, { padding: [32, 32], maxZoom: 15 });
+  if (pts.length && !mapaAjustado) {
+    mapa.fitBounds(pts, { padding: [32, 32], maxZoom: 15 });
+    mapaAjustado = true;
+  }
 }
 
 function tablaDatos(lista) {
@@ -1249,9 +1430,9 @@ function tablaDatos(lista) {
   ];
   const ord = [...lista].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
   const idSel = $("selMedicion") ? $("selMedicion").value : "";
-  $("metaTabla").textContent = `${ord.length} registros mostrados · clic en una fila para analizarla`;
+  $("metaTabla").textContent = `${ord.length} registros mostrados · clic o Enter en una fila para analizarla`;
   $("tablaDatos").innerHTML = `<thead><tr>${cols.map(([k, t]) => `<th class="${NUMS.includes(k) ? "num" : ""}">${esc(t)}</th>`).join("")}</tr></thead>
-    <tbody>${ord.map((d) => `<tr data-id="${esc(d.id)}" class="seleccionable${esEjemplo(d) ? " ejemplo" : ""}${String(d.id) === String(idSel) ? " seleccionada" : ""}">${cols.map(([k]) => {
+    <tbody>${ord.map((d) => `<tr data-id="${esc(d.id)}" tabindex="0" role="button" aria-selected="${String(d.id) === String(idSel)}" class="seleccionable${esEjemplo(d) ? " ejemplo" : ""}${String(d.id) === String(idSel) ? " seleccionada" : ""}">${cols.map(([k]) => {
       let v = d[k];
       if (k === "fecha") {
         v = v ? new Date(v).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }) + (esEjemplo(d) ? " (sim.)" : "") : "";
@@ -1290,18 +1471,86 @@ function descargarCSV() {
 $("tB").addEventListener("input", () => {
   $("tB").dataset.manual = "1";
   teoria(filtrados());
+  dibujarShannonScatter(filtrados(), parseFloat($("tB").value) || 20, parseFloat($("tT").value) || 25);
 });
-$("tT").addEventListener("input", () => teoria(filtrados()));
+$("tT").addEventListener("input", () => {
+  teoria(filtrados());
+  dibujarShannonScatter(filtrados(), parseFloat($("tB").value) || 20, parseFloat($("tT").value) || 25);
+});
 $("selMedicion").addEventListener("change", () => seleccionarMedicion($("selMedicion").value));
+if ($("filtroMedicion")) {
+  $("filtroMedicion").addEventListener("input", (e) => {
+    const q = e.target.value.toLowerCase().trim();
+    const opts = $("selMedicion").options;
+    for (let i = 0; i < opts.length; i++) {
+      const opt = opts[i];
+      opt.hidden = q !== "" && !opt.textContent.toLowerCase().includes(q);
+    }
+  });
+  $("filtroMedicion").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const opts = $("selMedicion").options;
+      for (let i = 0; i < opts.length; i++) {
+        if (!opts[i].hidden && opts[i].value) {
+          seleccionarMedicion(opts[i].value);
+          break;
+        }
+      }
+    }
+  });
+}
+
+if ($("btnCopiarUrl")) {
+  $("btnCopiarUrl").addEventListener("click", async () => {
+    const url = $("vivoUrl").textContent;
+    try {
+      await navigator.clipboard.writeText(url);
+      $("txtCopiarUrl").textContent = "¡Copiado!";
+      setTimeout(() => { if ($("txtCopiarUrl")) $("txtCopiarUrl").textContent = "Copiar"; }, 2000);
+    } catch (err) {
+      prompt("Copiá el enlace para compartir con los alumnos:", url);
+    }
+  });
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("panelVivo").hidden) {
+    alternarVivo();
+  }
+});
 $("tablaDatos").addEventListener("click", (e) => {
   const tr = e.target.closest("tr[data-id]");
   if (!tr) return;
   seleccionarMedicion(tr.dataset.id);
   $("selMedicion").scrollIntoView({ behavior: "smooth", block: "center" });
 });
+$("tablaDatos").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    const tr = e.target.closest("tr[data-id]");
+    if (tr) {
+      e.preventDefault();
+      seleccionarMedicion(tr.dataset.id);
+      $("selMedicion").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+});
 $("btnActualizar").addEventListener("click", cargar);
 $("btnVivo").addEventListener("click", alternarVivo);
 if (location.hash === "#vivo") setTimeout(alternarVivo, 300);
+
+// Selección automática si se invoca con ?id=... desde index.html
+try {
+  const params = new URLSearchParams(window.location.search);
+  const idBuscado = params.get("id");
+  if (idBuscado) {
+    setTimeout(() => {
+      seleccionarMedicion(idBuscado);
+      const card = $("t-teoria") ? $("t-teoria").closest(".card") : $("selMedicion");
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 450);
+  }
+} catch (e) {}
 window.addEventListener("storage", (e) => {
   if (e.key === "mediciones" && !CFG.SCRIPT_URL) cargar();
 });
