@@ -6,6 +6,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -80,20 +82,27 @@ public class MainActivity extends Activity {
             "senal_dbm", "barras", "lugar", "lat", "lon", "precision_m", "ubicacion_fuente", "ciudad", "comentario",
             "sinr_db", "ancho_mhz", "origen"};
 
-    // Paleta Impeccable ("Cuaderno de Telemetría e Instrumentación RF")
-    static final int BG = Color.parseColor("#F5F4EE"), SURFACE = Color.parseColor("#FDFCF9"), FG = Color.parseColor("#0F172A"),
-            MUTED = Color.parseColor("#526074"), LINE = Color.parseColor("#D5D2C6"), ACCENT = Color.parseColor("#1849C6"),
-            AMBER = Color.parseColor("#B46900"), GOOD = Color.parseColor("#117A43"), BAD = Color.parseColor("#B93829");
+    Tema tema;
+    EstadisticasPanel estadisticasPanel;
+    int tabActual = 0; // 0 = Medidor, 1 = Estadísticas
 
     final Handler ui = new Handler(Looper.getMainLooper());
     TextView tEquipo, tRed, tVelocidad, tFase, tResultados, tTeoria, tEstado;
     Button bMedir, bEnviar, bCompartir;
     EditText eLugar, eComentario;
     CheckBox cConsentimiento;
+    LinearLayout panelMedidor, panelEstadisticas;
+    ScrollView sv;
     final Map<String, Object> medicion = new HashMap<>();
     Red redActual = new Red();
     boolean midiendo = false;
     SharedPreferences prefs;
+
+    // Estado preservado ante cambios de tema
+    String txtEquipo = "…", txtRed = "Leyendo…", txtVelocidad = "0.0", txtFase = "Mbps · listo para medir";
+    String txtResultados = "—", txtTeoria = "Hacé una medición para ver el cálculo.", txtEstado = "";
+    int colorEstado = 0;
+    boolean hayEstado = false, enviarHabilitado = false, compartirHabilitado = false;
 
     // ======================================================================
     // Datos de la red
@@ -108,11 +117,44 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = getSharedPreferences("medidor", MODE_PRIVATE);
+        tema = Tema.resolver(this, prefs);
+        estadisticasPanel = new EstadisticasPanel(this, prefs, ui);
         construirUI();
         pedirPermisos();
         detectarEquipo();
         refrescarRed.run();
         new Thread(this::detectarISP).start();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (Tema.MODO_SISTEMA.equals(Tema.cargarModo(prefs))) {
+            aplicarTema(Tema.MODO_SISTEMA);
+        }
+    }
+
+    void aplicarTema(String modo) {
+        Tema.guardarModo(prefs, modo);
+        tema = Tema.resolver(this, prefs);
+        guardarEstadoVista();
+        construirUI();
+    }
+
+    void guardarEstadoVista() {
+        if (tEquipo != null) txtEquipo = tEquipo.getText().toString();
+        if (tRed != null) txtRed = tRed.getText().toString();
+        if (tVelocidad != null) txtVelocidad = tVelocidad.getText().toString();
+        if (tFase != null) txtFase = tFase.getText().toString();
+        if (tResultados != null) txtResultados = tResultados.getText().toString();
+        if (tTeoria != null) txtTeoria = tTeoria.getText().toString();
+        if (tEstado != null) {
+            txtEstado = tEstado.getText().toString();
+            hayEstado = tEstado.getVisibility() == View.VISIBLE;
+            colorEstado = tEstado.getCurrentTextColor();
+        }
+        if (bEnviar != null) enviarHabilitado = bEnviar.isEnabled();
+        if (bCompartir != null) compartirHabilitado = bCompartir.isEnabled();
     }
 
     @Override
@@ -558,7 +600,7 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 ui.post(() -> {
                     fase("Error en la medición");
-                    estado("No se pudo completar la medición: " + e.getMessage(), BAD);
+                    estado("No se pudo completar la medición: " + e.getMessage(), tema.bad);
                 });
             } finally {
                 ui.post(() -> { midiendo = false; bMedir.setEnabled(true); bMedir.setText("Medir de nuevo"); });
@@ -621,7 +663,7 @@ public class MainActivity extends Activity {
     // Envío automático a nuestra planilla
     // ======================================================================
     void enviar() {
-        if (!cConsentimiento.isChecked()) { estado("Para enviar tenés que aceptar el uso de los datos.", BAD); return; }
+        if (!cConsentimiento.isChecked()) { estado("Para enviar tenés que aceptar el uso de los datos.", tema.bad); return; }
         medicion.put("lugar", eLugar.getText().toString().trim());
         medicion.put("comentario", eComentario.getText().toString().trim());
         final String url = SCRIPT_URL_POR_DEFECTO;
@@ -639,9 +681,9 @@ public class MainActivity extends Activity {
                 c.setConnectTimeout(15000); c.setReadTimeout(20000);
                 try (OutputStream o = c.getOutputStream()) { o.write(j.toString().getBytes(StandardCharsets.UTF_8)); }
                 int code = c.getResponseCode();
-                ui.post(() -> estado(code < 400 ? "¡Listo! Tu medición se envió a la planilla compartida." : "La planilla respondió con error " + code + ".", code < 400 ? GOOD : BAD));
+                ui.post(() -> estado(code < 400 ? "¡Listo! Tu medición se envió a la planilla compartida." : "La planilla respondió con error " + code + ".", code < 400 ? tema.good : tema.bad));
             } catch (Exception e) {
-                ui.post(() -> { estado("No se pudo enviar (" + e.getMessage() + "). Quedó guardada en el celular.", BAD); bEnviar.setEnabled(true); });
+                ui.post(() -> { estado("No se pudo enviar (" + e.getMessage() + "). Quedó guardada en el celular.", tema.bad); bEnviar.setEnabled(true); });
             }
         }).start();
     }
@@ -692,11 +734,11 @@ public class MainActivity extends Activity {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
         c.setPadding(dp(16), dp(14), dp(16), dp(16));
-        c.setBackground(fondo(SURFACE, LINE, 10));
+        c.setBackground(fondo(tema.surface, tema.line, 10));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(14);
         padre.addView(c, lp);
-        TextView t = texto(titulo.toUpperCase(Locale.ROOT), 11, MUTED, true);
+        TextView t = texto(titulo.toUpperCase(Locale.ROOT), 11, tema.muted, true);
         t.setTypeface(Typeface.MONOSPACE, Typeface.BOLD); t.setLetterSpacing(0.08f);
         c.addView(t);
         return c;
@@ -706,8 +748,8 @@ public class MainActivity extends Activity {
         Button b = new Button(this);
         b.setText(t); b.setAllCaps(false); b.setTextSize(16);
         b.setTypeface(Typeface.DEFAULT_BOLD);
-        b.setTextColor(primario ? Color.WHITE : FG);
-        b.setBackground(fondo(primario ? ACCENT : SURFACE, primario ? ACCENT : LINE, 8));
+        b.setTextColor(primario ? Color.WHITE : tema.fg);
+        b.setBackground(fondo(primario ? tema.accent : tema.surfaceElevated, primario ? tema.accent : tema.lineStrong, 8));
         b.setPadding(dp(12), dp(14), dp(12), dp(14));
         return b;
     }
@@ -715,69 +757,178 @@ public class MainActivity extends Activity {
     EditText campo(String pista) {
         EditText e = new EditText(this);
         e.setHint(pista); e.setTextSize(15); e.setSingleLine(true);
+        e.setTextColor(tema.fg);
+        e.setHintTextColor(tema.muted);
+        e.setBackground(fondo(tema.surfaceElevated, tema.lineStrong, 8));
+        e.setPadding(dp(12), dp(10), dp(12), dp(10));
         e.setInputType(InputType.TYPE_CLASS_TEXT);
         return e;
     }
 
+    Button botonSegmento(String t, boolean activo) {
+        Button b = new Button(this);
+        b.setText(t);
+        b.setAllCaps(false);
+        b.setTextSize(13);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setTextColor(activo ? Color.WHITE : tema.fgSecondary);
+        b.setBackground(fondo(activo ? tema.accent : tema.surfaceAlt, activo ? tema.accent : tema.line, 7));
+        b.setPadding(dp(8), dp(8), dp(8), dp(8));
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        return b;
+    }
+
+    void aplicarBarrasSistema() {
+        getWindow().setStatusBarColor(tema.bg);
+        getWindow().setNavigationBarColor(tema.bg);
+        int flags = getWindow().getDecorView().getSystemUiVisibility();
+        if (!tema.oscuro) {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= 26) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        } else {
+            flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= 26) flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        getWindow().getDecorView().setSystemUiVisibility(flags);
+    }
+
+    void cambiarTab(int nuevoTab) {
+        tabActual = nuevoTab;
+        if (panelMedidor != null) panelMedidor.setVisibility(tabActual == 0 ? View.VISIBLE : View.GONE);
+        if (panelEstadisticas != null) panelEstadisticas.setVisibility(tabActual == 1 ? View.VISIBLE : View.GONE);
+        guardarEstadoVista();
+        construirUI();
+    }
+
     void construirUI() {
-        getWindow().setStatusBarColor(BG);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-        ScrollView sv = new ScrollView(this);
-        sv.setBackgroundColor(BG);
+        aplicarBarrasSistema();
+
+        String prevLugar = eLugar != null ? eLugar.getText().toString() : "";
+        String prevCom = eComentario != null ? eComentario.getText().toString() : "";
+        boolean prevConsent = cConsentimiento != null && cConsentimiento.isChecked();
+
+        sv = new ScrollView(this);
+        sv.setBackgroundColor(tema.bg);
         LinearLayout raiz = new LinearLayout(this);
         raiz.setOrientation(LinearLayout.VERTICAL);
-        raiz.setPadding(dp(16), dp(24), dp(16), dp(40));
+        raiz.setPadding(dp(16), dp(20), dp(16), dp(40));
         sv.addView(raiz);
 
-        TextView eyebrow = texto("UTN FRT · COMUNICACIÓN", 11, ACCENT, true);
+        // Cabecera institucional
+        TextView eyebrow = texto("UTN FRT · COMUNICACIÓN", 11, tema.accent, true);
         eyebrow.setTypeface(Typeface.MONOSPACE, Typeface.BOLD); eyebrow.setLetterSpacing(0.08f);
         raiz.addView(eyebrow);
-        raiz.addView(texto("Medidor de Señal", 28, FG, true));
+        raiz.addView(texto("Medidor de Señal", 28, tema.fg, true));
 
-        LinearLayout cEq = tarjeta(raiz, "Telemetría del dispositivo");
-        tEquipo = texto("…", 16, FG, false); cEq.addView(tEquipo);
+        // Selector de tema: Sistema | Claro | Oscuro
+        LinearLayout filaTema = new LinearLayout(this);
+        filaTema.setOrientation(LinearLayout.HORIZONTAL);
+        filaTema.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams lpTema = new LinearLayout.LayoutParams(-1, -2);
+        lpTema.topMargin = dp(10);
+        TextView lblTema = texto("TEMA:", 11, tema.muted, true);
+        lblTema.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        LinearLayout.LayoutParams lpLblT = new LinearLayout.LayoutParams(-2, -2);
+        lpLblT.rightMargin = dp(8);
+        filaTema.addView(lblTema, lpLblT);
 
-        LinearLayout cRed = tarjeta(raiz, "Enlace de radiofrecuencia en vivo");
-        tRed = texto("Leyendo…", 16, FG, false); tRed.setLineSpacing(0, 1.15f); cRed.addView(tRed);
+        String[][] modos = {{Tema.MODO_SISTEMA, "Sistema"}, {Tema.MODO_CLARO, "Claro"}, {Tema.MODO_OSCURO, "Oscuro"}};
+        String modoActual = Tema.cargarModo(prefs);
+        for (int i = 0; i < modos.length; i++) {
+            final String mKey = modos[i][0];
+            Button bt = botonSegmento(modos[i][1], mKey.equals(modoActual));
+            LinearLayout.LayoutParams lpt = new LinearLayout.LayoutParams(0, -2, 1f);
+            if (i < modos.length - 1) lpt.rightMargin = dp(6);
+            bt.setOnClickListener(v -> {
+                if (!mKey.equals(Tema.cargarModo(prefs))) aplicarTema(mKey);
+            });
+            filaTema.addView(bt, lpt);
+        }
+        raiz.addView(filaTema, lpTema);
 
-        LinearLayout cMed = tarjeta(raiz, "Instrumento de medición");
-        tVelocidad = texto("0.0", 56, FG, true);
+        // Selector de pliego: Medidor | Estadísticas
+        LinearLayout filaTabs = new LinearLayout(this);
+        filaTabs.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams lpTabs = new LinearLayout.LayoutParams(-1, -2);
+        lpTabs.topMargin = dp(10);
+        Button tabMed = botonSegmento("Medidor", tabActual == 0);
+        Button tabEst = botonSegmento("Estadísticas", tabActual == 1);
+        LinearLayout.LayoutParams lpT1 = new LinearLayout.LayoutParams(0, -2, 1f);
+        lpT1.rightMargin = dp(6);
+        tabMed.setOnClickListener(v -> { if (tabActual != 0) cambiarTab(0); });
+        tabEst.setOnClickListener(v -> { if (tabActual != 1) cambiarTab(1); });
+        filaTabs.addView(tabMed, lpT1);
+        filaTabs.addView(tabEst, new LinearLayout.LayoutParams(0, -2, 1f));
+        raiz.addView(filaTabs, lpTabs);
+
+        // Panel Medidor
+        panelMedidor = new LinearLayout(this);
+        panelMedidor.setOrientation(LinearLayout.VERTICAL);
+        panelMedidor.setVisibility(tabActual == 0 ? View.VISIBLE : View.GONE);
+        raiz.addView(panelMedidor);
+
+        LinearLayout cEq = tarjeta(panelMedidor, "Telemetría del dispositivo");
+        tEquipo = texto(txtEquipo, 16, tema.fg, false); cEq.addView(tEquipo);
+
+        LinearLayout cRed = tarjeta(panelMedidor, "Enlace de radiofrecuencia en vivo");
+        tRed = texto(txtRed, 16, tema.fg, false); tRed.setLineSpacing(0, 1.15f); cRed.addView(tRed);
+
+        LinearLayout cMed = tarjeta(panelMedidor, "Instrumento de medición");
+        tVelocidad = texto(txtVelocidad, 56, tema.fg, true);
         tVelocidad.setTypeface(Typeface.MONOSPACE, Typeface.BOLD); tVelocidad.setGravity(Gravity.CENTER);
         cMed.addView(tVelocidad, new LinearLayout.LayoutParams(-1, -2));
-        tFase = texto("Mbps · listo para medir", 12, MUTED, true);
+        tFase = texto(txtFase, 12, tema.muted, true);
         tFase.setTypeface(Typeface.MONOSPACE, Typeface.BOLD); tFase.setGravity(Gravity.CENTER);
         cMed.addView(tFase, new LinearLayout.LayoutParams(-1, -2));
-        bMedir = boton("Iniciar medición", true);
+        bMedir = boton(midiendo ? "Midiendo…" : "Iniciar medición", true);
+        bMedir.setEnabled(!midiendo);
         LinearLayout.LayoutParams lpb = new LinearLayout.LayoutParams(-1, -2); lpb.topMargin = dp(14);
         cMed.addView(bMedir, lpb);
         bMedir.setOnClickListener(v -> medir());
-        cMed.addView(texto("Usa entre 10 y 40 MB de datos.", 13, MUTED, false));
-        tResultados = texto("—", 16, FG, false);
+        cMed.addView(texto("Usa entre 10 y 40 MB de datos.", 13, tema.muted, false));
+        tResultados = texto(txtResultados, 16, tema.fg, false);
         tResultados.setTypeface(Typeface.MONOSPACE);
         LinearLayout.LayoutParams lpr = new LinearLayout.LayoutParams(-1, -2); lpr.topMargin = dp(10);
         cMed.addView(tResultados, lpr);
 
-        LinearLayout cTeo = tarjeta(raiz, "Análisis teórico");
-        tTeoria = texto("Hacé una medición para ver el cálculo.", 14, FG, false);
+        LinearLayout cTeo = tarjeta(panelMedidor, "Análisis teórico");
+        tTeoria = texto(txtTeoria, 14, tema.fg, false);
         tTeoria.setLineSpacing(0, 1.15f);
         cTeo.addView(tTeoria);
 
-        LinearLayout cEnv = tarjeta(raiz, "Parámetros de enlace y envío a registro");
-        eLugar = campo("Entorno: Interior, Exterior, En movimiento…"); cEnv.addView(eLugar);
-        eComentario = campo("Observación o aula (ej.: Aula 3)"); cEnv.addView(eComentario);
+        LinearLayout cEnv = tarjeta(panelMedidor, "Parámetros de enlace y envío a registro");
+        LinearLayout.LayoutParams lpCampo = new LinearLayout.LayoutParams(-1, -2);
+        lpCampo.topMargin = dp(8);
+        eLugar = campo("Entorno: Interior, Exterior, En movimiento…");
+        eLugar.setText(prevLugar);
+        cEnv.addView(eLugar, lpCampo);
+        eComentario = campo("Observación o aula (ej.: Aula 3)");
+        eComentario.setText(prevCom);
+        cEnv.addView(eComentario, lpCampo);
         cConsentimiento = new CheckBox(this);
         cConsentimiento.setText("Acepto registrar esta medición para análisis académico de la cátedra de Comunicación (UTN FRT). No se almacenan números telefónicos ni direcciones IP personales.");
-        cConsentimiento.setTextColor(FG); cConsentimiento.setTextSize(13);
-        cEnv.addView(cConsentimiento);
-        bEnviar = boton("Registrar medición", true); bEnviar.setEnabled(false);
+        cConsentimiento.setTextColor(tema.fg); cConsentimiento.setTextSize(13);
+        cConsentimiento.setButtonTintList(ColorStateList.valueOf(tema.accent));
+        cConsentimiento.setChecked(prevConsent);
+        cEnv.addView(cConsentimiento, lpCampo);
+        bEnviar = boton("Registrar medición", true); bEnviar.setEnabled(enviarHabilitado);
         cEnv.addView(bEnviar, lpb);
         bEnviar.setOnClickListener(v -> enviar());
-        bCompartir = boton("Compartir resultado", false); bCompartir.setEnabled(false);
+        bCompartir = boton("Compartir resultado", false); bCompartir.setEnabled(compartirHabilitado);
         LinearLayout.LayoutParams lpc = new LinearLayout.LayoutParams(-1, -2); lpc.topMargin = dp(8);
         cEnv.addView(bCompartir, lpc);
         bCompartir.setOnClickListener(v -> compartir());
-        tEstado = texto("", 14, FG, true); tEstado.setVisibility(View.GONE);
+        tEstado = texto(txtEstado, 14, hayEstado ? colorEstado : tema.fg, true);
+        tEstado.setVisibility(hayEstado ? View.VISIBLE : View.GONE);
         cEnv.addView(tEstado, lpr);
+
+        // Panel Estadísticas
+        panelEstadisticas = new LinearLayout(this);
+        panelEstadisticas.setOrientation(LinearLayout.VERTICAL);
+        panelEstadisticas.setVisibility(tabActual == 1 ? View.VISIBLE : View.GONE);
+        panelEstadisticas.addView(estadisticasPanel.construir(tema));
+        raiz.addView(panelEstadisticas);
 
         setContentView(sv);
     }
