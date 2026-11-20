@@ -37,26 +37,12 @@ const RANGOS_NUMERICOS = {
   ancho_mhz: [1, 800],
 };
 
-// Semilla inicial cargada desde config.js si no existe data/mediciones.json
-function obtenerSemillaInicial() {
-  try {
-    const sandbox = { window: {} };
-    const code = fs.readFileSync(path.join(ROOT_DIR, "config.js"), "utf8");
-    const fn = new Function("window", code);
-    fn(sandbox.window);
-    return Array.isArray(sandbox.window.SEMILLA_INICIAL) ? sandbox.window.SEMILLA_INICIAL : [];
-  } catch (e) {
-    return [];
-  }
-}
-
 function asegurarBaseDeDatos() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   if (!fs.existsSync(DATA_FILE)) {
-    const inicial = obtenerSemillaInicial();
-    fs.writeFileSync(DATA_FILE, JSON.stringify(inicial, null, 2), "utf8");
+    fs.writeFileSync(DATA_FILE, "[]", "utf8");
   }
 }
 

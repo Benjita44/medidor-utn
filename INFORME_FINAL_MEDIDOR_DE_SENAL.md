@@ -170,7 +170,7 @@ El proyecto soporta dos modos de operación configurables desde `config.js` (`SC
 
 - **Backend en la nube (`backend/google-apps-script.gs`):** Implementado como Web App de Google Apps Script sobre una planilla de Google Sheets. Utiliza `LockService.getScriptLock()` para evitar colisiones ante envíos simultáneos en el aula, valida rangos numéricos de todas las magnitudes físicas, fuerza formato de texto en `version_so` (evitando que Google Sheets interprete versiones como `"18.3"` como fechas) y neutraliza prefijos peligrosos (`=`, `+`, `-`, `@`) para prevenir inyección de fórmulas en CSV/Excel.
 - **Backend local autónomo (`server.js`):** Servidor HTTP en Node.js puro (sin dependencias externas) que sirve los archivos estáticos y expone la API REST `/api/mediciones` (`GET` y `POST`, incluyendo carga de lotes y limpieza de simulación) con almacenamiento atómico en `data/mediciones.json` y control de tasa por IP (máximo 30 escrituras por minuto). Además, provee el endpoint `/api/senal`, que consulta `netsh wlan show interfaces` en Windows para dotar de lectura WiFi real al cliente web cuando se ejecuta localmente.
-- **Modo autónomo/offline:** Si no hay conexión con el backend configurado, el frontend opera con la semilla inicial de mediciones reales (`window.SEMILLA_INICIAL` en `config.js`) y almacenamiento local en el navegador (`localStorage`).
+- **Modo autónomo/offline:** Si no hay conexión con el backend configurado, el frontend opera con almacenamiento local en el navegador (`localStorage`).
 
 ### 5.3 Modelo de datos (31 variables)
 

@@ -704,9 +704,8 @@ function guardarLocal(reg) {
     let lista = [];
     const crudo = localStorage.getItem("mediciones");
     if (crudo) {
-      lista = JSON.parse(crudo);
-    } else if (Array.isArray(window.SEMILLA_INICIAL)) {
-      lista = [...window.SEMILLA_INICIAL];
+      const parsed = JSON.parse(crudo);
+      if (Array.isArray(parsed)) lista = parsed;
     }
     lista.push(reg);
     localStorage.setItem("mediciones", JSON.stringify(lista));

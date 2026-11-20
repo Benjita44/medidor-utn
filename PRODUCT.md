@@ -47,8 +47,7 @@ A diferencia de un test de velocidad comercial genérico (Speedtest, Fast.com), 
 
 ## Evidence on Hand
 
-- Código fuente e ingeniería inversa completa obtenida mediante **REA** (`ev_a3d31da671906568d5bc92827179fc5a38051a368204326a6c63941324ef76b3`, `ev_923b294f194066ced3ac5e3e039cfe61bb4137d7191bafd80e275b8ce1acfe3a`, `ev_fb8ebee5f81dbcc774baf23c11ff3b0c17cd04bb57067fdab4473460072ecdf4`).
-- Fórmulas de cátedra verificadas en `teoria.js` y muestra real de 9 mediciones de referencia en San Miguel de Tucumán capturadas como semilla opcional de demostración.
+- Fórmulas de cátedra verificadas en `teoria.js` y persistencia centralizada en Google Sheets.
 
 ## Product Principles
 

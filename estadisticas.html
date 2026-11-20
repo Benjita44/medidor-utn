@@ -576,13 +576,9 @@ function leerLocal() {
       const parsed = JSON.parse(crudo);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-    if (Array.isArray(window.SEMILLA_INICIAL) && window.SEMILLA_INICIAL.length) {
-      localStorage.setItem("mediciones", JSON.stringify(window.SEMILLA_INICIAL));
-      return window.SEMILLA_INICIAL;
-    }
     return [];
   } catch (e) {
-    return window.SEMILLA_INICIAL || [];
+    return [];
   }
 }
 
@@ -618,7 +614,7 @@ async function cargar() {
     datos = leerLocal().map(normalizar);
     aviso.hidden = false;
     aviso.className = "aviso";
-    aviso.innerHTML = "<b>Modo Laboratorio Autónomo:</b> Los registros se almacenan en este navegador (incluye dataset base UTN FRT).";
+    aviso.innerHTML = "<b>Modo Laboratorio Autónomo:</b> Los registros se almacenan en este navegador.";
     const hayEjemplo = datos.some(esEjemplo);
     $("btnEjemplo").hidden = hayEjemplo;
     $("btnBorrarEjemplo").hidden = !hayEjemplo;
