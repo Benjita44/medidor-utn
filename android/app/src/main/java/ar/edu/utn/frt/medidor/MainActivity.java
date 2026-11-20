@@ -15,6 +15,7 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiInfo;
@@ -32,23 +33,29 @@ import android.telephony.CellSignalStrengthLte;
 import android.telephony.CellSignalStrengthNr;
 import android.telephony.SignalStrength;
 import android.telephony.TelephonyManager;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -74,6 +81,12 @@ public class MainActivity extends Activity {
     static final String SCRIPT_URL_POR_DEFECTO = "https://script.google.com/macros/s/AKfycbw3aFZwnii8ENYhQgDPl2qAefmcTeZ2HE-QDPz2cuogEJQWPQqG6i21825SfMNFxq5ZVw/exec";
     static final String SPEED_HOST = "https://speed.cloudflare.com";
     static final String IP_INFO_URL = "https://ipwho.is/";
+    static final String IP_INFO_FALLBACK_1 = "https://ipinfo.io/json";
+    static final String IP_INFO_FALLBACK_2 = "https://ipapi.co/json/";
+    static final long ISP_RETRY_MS = 15_000L;
+    static final String[] PROVEEDORES_RAPIDOS = {
+            "Personal", "Claro", "Movistar", "CCC", "Starlink", "Telecentro", "RIU / UTN"
+    };
 
     static final String[] CAMPOS = {
             "id", "fecha", "tipo_dispositivo", "nombre_dispositivo", "marca", "modelo", "so", "version_so", "navegador",
@@ -87,16 +100,32 @@ public class MainActivity extends Activity {
     int tabActual = 0; // 0 = Medidor, 1 = Estadísticas
 
     final Handler ui = new Handler(Looper.getMainLooper());
-    TextView tEquipo, tRed, tVelocidad, tFase, tResultados, tTeoria, tEstado;
-    Button bMedir, bEnviar, bCompartir;
-    EditText eLugar, eComentario;
+    TextView tEquipo, tRed, tIspLabel, tIspDetalle, tVelocidad, tFase, tResultados, tTeoria, tEstado;
+    Button bMedir, bEnviar, bCompartir, bRedetectarIsp;
+    EditText eProveedor, eLugar, eComentario;
     CheckBox cConsentimiento;
     LinearLayout panelMedidor, panelEstadisticas;
     ScrollView sv;
-    final Map<String, Object> medicion = new HashMap<>();
+    final List<Button> chipsProveedor = new ArrayList<>();
+    final Map<String, Object> medicion = Collections.synchronizedMap(new HashMap<>());
     Red redActual = new Red();
     boolean midiendo = false;
     SharedPreferences prefs;
+
+    // Estado de detección y corrección de proveedor / ISP
+    volatile InfoIsp ispActual = null;
+    volatile String ispClaveEnCurso = null;
+    volatile long ultimoIntentoIspMs = 0L;
+    volatile boolean ispUltimoFallo = false;
+    volatile long ispIntentoSeq = 0L;
+    String ultimaClaveRedConectada = "";
+    volatile String proveedorTexto = "";
+    volatile boolean proveedorEditadoManualmente = false;
+    boolean actualizandoProveedorUi = false;
+    volatile String medicionClaveRed = "";
+    boolean tieneResultadoMedicion = false;
+    double ultBaj, ultSub, ultLat, ultJit;
+    String ultUbic = "";
 
     // Estado preservado ante cambios de tema
     String txtEquipo = "…", txtRed = "Leyendo…", txtVelocidad = "0.0", txtFase = "Mbps · listo para medir";
@@ -108,9 +137,25 @@ public class MainActivity extends Activity {
     // Datos de la red
     // ======================================================================
     static class Red {
-        String conexion = "", tecnologia = "", detalle = "", operador = "";
+        String conexion = "", tecnologia = "", detalle = "", operador = "", claveRed = "";
+        Network redActiva;
         Integer dbm, rsrq, barras;
         Double sinr, anchoMHz;
+    }
+
+    static class InfoIsp {
+        final String claveRed, ispCrudo, empresaNorm, asn, ciudad;
+        final Double lat, lon;
+
+        InfoIsp(String claveRed, String ispCrudo, String empresaNorm, String asn, String ciudad, Double lat, Double lon) {
+            this.claveRed = claveRed;
+            this.ispCrudo = ispCrudo;
+            this.empresaNorm = empresaNorm;
+            this.asn = asn;
+            this.ciudad = ciudad;
+            this.lat = lat;
+            this.lon = lon;
+        }
     }
 
     @Override
@@ -123,7 +168,6 @@ public class MainActivity extends Activity {
         pedirPermisos();
         detectarEquipo();
         refrescarRed.run();
-        new Thread(this::detectarISP).start();
     }
 
     @Override
@@ -186,6 +230,7 @@ public class MainActivity extends Activity {
         public void run() {
             try {
                 redActual = leerRed();
+                procesarCambioRedYDetectarIsp(redActual);
                 mostrarRed(redActual);
             } catch (Exception e) {
                 tRed.setText("No se pudo leer la red: " + e.getMessage());
@@ -198,20 +243,41 @@ public class MainActivity extends Activity {
     Red leerRed() {
         Red r = new Red();
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkCapabilities nc = cm.getNetworkCapabilities(cm.getActiveNetwork());
+        Network redActiva = cm != null ? cm.getActiveNetwork() : null;
+        NetworkCapabilities nc = (cm != null && redActiva != null) ? cm.getNetworkCapabilities(redActiva) : null;
         TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
-        r.operador = normalizarOperador(tm.getSimOperatorName());
+        r.redActiva = redActiva;
+        long handle = redActiva != null ? redActiva.getNetworkHandle() : 0L;
 
         if (nc != null && nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
             leerWifi(r);
+            r.claveRed = "WiFi:" + handle;
+            r.operador = resolverOperadorIsp(r.claveRed);
         } else if (nc != null && nc.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
             leerCelular(r, tm);
+            r.claveRed = "Datos móviles:" + handle;
+            String op = tm != null ? normalizarOperador(tm.getSimOperatorName()) : "";
+            if (op.isEmpty() && tm != null) op = normalizarOperador(tm.getNetworkOperatorName());
+            if (op.isEmpty()) op = resolverOperadorIsp(r.claveRed);
+            r.operador = op;
         } else if (nc != null && nc.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
             r.conexion = "Cable";
+            r.claveRed = "Cable:" + handle;
+            r.operador = resolverOperadorIsp(r.claveRed);
         } else {
             r.conexion = "Sin conexión";
+            r.claveRed = "Sin conexión";
+            r.operador = "";
         }
         return r;
+    }
+
+    String resolverOperadorIsp(String claveRed) {
+        InfoIsp info = ispActual;
+        if (info != null && claveRed.equals(info.claveRed)) {
+            return info.empresaNorm;
+        }
+        return "";
     }
 
     @SuppressWarnings("deprecation")
@@ -334,11 +400,67 @@ public class MainActivity extends Activity {
     }
 
     static String normalizarOperador(String n) {
-        String s = n == null ? "" : n.toLowerCase(Locale.ROOT);
+        if (n == null) return "";
+        String limpio = n.trim();
+        if (limpio.isEmpty() || "null".equalsIgnoreCase(limpio)) return "";
+        String s = sinAcentos(limpio).toLowerCase(Locale.ROOT);
         if (s.contains("personal")) return "Personal";
         if (s.contains("claro")) return "Claro";
         if (s.contains("movistar") || s.contains("tuenti")) return "Movistar";
-        return n == null || n.isEmpty() ? "" : n;
+        return limpio;
+    }
+
+    static String sinAcentos(String s) {
+        if (s == null) return "";
+        return Normalizer.normalize(s, Normalizer.Form.NFD)
+                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+    }
+
+    static String normalizarIsp(String n) {
+        if (n == null) return "";
+        String limpio = n.trim();
+        if (limpio.isEmpty() || "null".equalsIgnoreCase(limpio)) return "";
+        limpio = limpio.replaceFirst("(?i)^AS\\d+\\s+", "").trim();
+        if (limpio.isEmpty()) return "";
+        String s = sinAcentos(limpio).toLowerCase(Locale.ROOT);
+        if (s.contains("claro") || s.contains("amx") || s.contains("techtel")
+                || s.contains("telmex") || s.contains("america movil")) {
+            return "Claro";
+        }
+        if (s.contains("movistar") || s.contains("telefonica") || s.contains("tuenti")) {
+            return "Movistar";
+        }
+        if (s.contains("personal") || s.contains("telecom") || s.contains("cablevision")
+                || s.contains("fibertel") || s.contains("arnet")) {
+            return "Personal";
+        }
+        if (s.contains("circuitos cerrados") || s.matches(".*\\bccc\\b.*")) {
+            return "CCC";
+        }
+        if (s.contains("starlink") || s.contains("spacex")) {
+            return "Starlink";
+        }
+        if (s.contains("telecentro")) {
+            return "Telecentro";
+        }
+        if (s.contains("supercanal")) {
+            return "Supercanal";
+        }
+        if (s.contains("gigared")) {
+            return "Gigared";
+        }
+        if (s.contains("iplan") || s.contains("nss s.a")) {
+            return "IPLAN";
+        }
+        if (s.contains("metrotel")) {
+            return "Metrotel";
+        }
+        if (s.contains("innova-red") || s.contains("innovared")
+                || s.contains("redes de interconexion universitaria")
+                || s.matches(".*\\briu\\b.*")) {
+            return "RIU / UTN";
+        }
+        return limpio;
     }
 
     static String calidad(int dbm, String conexion) {
@@ -348,11 +470,25 @@ public class MainActivity extends Activity {
         return "Sin servicio útil";
     }
 
+    String obtenerProveedorEfectivo(Red r) {
+        String txt = proveedorTexto == null ? "" : proveedorTexto.trim();
+        if (proveedorEditadoManualmente) return txt;
+        if (r != null && r.operador != null && !r.operador.trim().isEmpty()) return r.operador.trim();
+        return txt;
+    }
+
     void mostrarRed(Red r) {
+        if (tRed == null || r == null) return;
         StringBuilder s = new StringBuilder();
         s.append(r.conexion);
         if (!r.tecnologia.isEmpty()) s.append(" · ").append(r.tecnologia);
-        if (!r.operador.isEmpty()) s.append(" · ").append(r.operador);
+        String prov = obtenerProveedorEfectivo(r);
+        if (!prov.isEmpty()) {
+            s.append(" · ").append(prov);
+        } else if (("WiFi".equals(r.conexion) || "Cable".equals(r.conexion))
+                && r.claveRed != null && r.claveRed.equals(ispClaveEnCurso)) {
+            s.append(" · Detectando ISP…");
+        }
         if (r.dbm != null) {
             s.append("\n").append(r.dbm).append(" dBm").append("WiFi".equals(r.conexion) ? " (RSSI)" : " (RSRP)")
                     .append(" · ").append(calidad(r.dbm, r.conexion));
@@ -409,18 +545,340 @@ public class MainActivity extends Activity {
         tEquipo.setText(nombre + "\n" + marca + " " + modelo + " · Android " + Build.VERSION.RELEASE);
     }
 
-    void detectarISP() {
+    // ======================================================================
+    // Proveedor / ISP por IP activa y edición manual
+    // ======================================================================
+    void establecerProveedorUI(String valor, boolean moverCursor) {
+        String limpio = valor == null ? "" : valor;
+        proveedorTexto = limpio;
+        if (eProveedor == null) return;
+        actualizandoProveedorUi = true;
         try {
-            JSONObject d = new JSONObject(leerTexto(IP_INFO_URL));
-            JSONObject c = d.optJSONObject("connection");
-            if (c != null) {
-                medicion.put("isp_detectado", c.optString("isp", c.optString("org")));
-                if (c.has("asn")) medicion.put("asn", "AS" + c.optInt("asn"));
+            if (!limpio.equals(eProveedor.getText().toString())) {
+                eProveedor.setText(limpio);
             }
-            medicion.put("ciudad", d.optString("city"));
-            medicion.put("_ipLat", d.optDouble("latitude"));
-            medicion.put("_ipLon", d.optDouble("longitude"));
+            if (moverCursor) {
+                eProveedor.setSelection(limpio.length());
+            }
+        } finally {
+            actualizandoProveedorUi = false;
+        }
+        actualizarEstilosChips();
+    }
+
+    void actualizarEstilosChips() {
+        if (tema == null) return;
+        String actual = proveedorTexto == null ? "" : proveedorTexto.trim();
+        for (Button chip : chipsProveedor) {
+            boolean activo = !actual.isEmpty() && actual.equalsIgnoreCase(chip.getText().toString());
+            chip.setBackground(fondo(activo ? tema.accentSoft : tema.surfaceAlt, activo ? tema.accent : tema.line, 14));
+            chip.setTextColor(activo ? tema.accent : tema.fgSecondary);
+            chip.setTypeface(Typeface.DEFAULT, activo ? Typeface.BOLD : Typeface.NORMAL);
+        }
+    }
+
+    void actualizarPanelIspUI(Red r) {
+        if (tIspLabel == null || tIspDetalle == null || tema == null) return;
+        String conexion = r != null ? r.conexion : "";
+        if ("WiFi".equals(conexion)) {
+            tIspLabel.setText("PROVEEDOR / ISP WIFI (DETECTADO POR IP · EDITABLE)");
+        } else if ("Datos móviles".equals(conexion)) {
+            tIspLabel.setText("OPERADORA MÓVIL (SIM · EDITABLE)");
+        } else if ("Cable".equals(conexion)) {
+            tIspLabel.setText("PROVEEDOR / ISP CABLE (DETECTADO POR IP · EDITABLE)");
+        } else {
+            tIspLabel.setText("PROVEEDOR / ISP (EDITABLE)");
+        }
+
+        String clave = r != null ? r.claveRed : "";
+        boolean enCurso = !clave.isEmpty() && clave.equals(ispClaveEnCurso);
+        InfoIsp info = (ispActual != null && clave.equals(ispActual.claveRed)) ? ispActual : null;
+        String provActual = obtenerProveedorEfectivo(r);
+
+        if (bRedetectarIsp != null) {
+            bRedetectarIsp.setEnabled(!enCurso);
+            bRedetectarIsp.setAlpha(enCurso ? 0.5f : 1f);
+        }
+
+        if ("Sin conexión".equals(conexion) || conexion.isEmpty()) {
+            tIspDetalle.setTextColor(tema.muted);
+            tIspDetalle.setText("Sin conexión activa. Podés escribir el proveedor manualmente si lo necesitás.");
+            return;
+        }
+
+        if (proveedorEditadoManualmente) {
+            StringBuilder msg = new StringBuilder();
+            if (provActual.isEmpty()) {
+                msg.append("Campo vacío: escribí o elegí un proveedor antes de registrar.");
+                tIspDetalle.setTextColor(tema.amber);
+            } else {
+                msg.append("Corregido manualmente → ").append(provActual);
+                if (info != null && !info.ispCrudo.isEmpty()) {
+                    msg.append(" (IP: ").append(info.ispCrudo);
+                    if (!info.asn.isEmpty()) msg.append(" · ").append(info.asn);
+                    msg.append(")");
+                }
+                tIspDetalle.setTextColor(tema.accent);
+            }
+            tIspDetalle.setText(msg.toString());
+            return;
+        }
+
+        if ("WiFi".equals(conexion) || "Cable".equals(conexion)) {
+            if (enCurso && info == null) {
+                tIspDetalle.setTextColor(tema.muted);
+                tIspDetalle.setText("Consultando ISP real de la red por IP pública…");
+            } else if (info != null) {
+                StringBuilder msg = new StringBuilder("IP pública: ").append(info.ispCrudo);
+                if (!info.asn.isEmpty()) msg.append(" · ").append(info.asn);
+                if (!info.ciudad.isEmpty()) msg.append(" · ").append(info.ciudad);
+                tIspDetalle.setTextColor(tema.muted);
+                tIspDetalle.setText(msg.toString());
+            } else if (ispUltimoFallo) {
+                tIspDetalle.setTextColor(tema.amber);
+                tIspDetalle.setText("No se pudo detectar el ISP automáticamente. Elegilo o escribilo arriba, o tocá ↻.");
+            } else {
+                tIspDetalle.setTextColor(tema.muted);
+                tIspDetalle.setText("Esperando detección automática del ISP…");
+            }
+        } else {
+            StringBuilder msg = new StringBuilder();
+            if (r != null && !r.operador.isEmpty()) {
+                msg.append("SIM detectada: ").append(r.operador);
+            } else {
+                msg.append("Operadora SIM no informada");
+            }
+            if (info != null && !info.ispCrudo.isEmpty()) {
+                msg.append(" · IP: ").append(info.ispCrudo);
+                if (!info.asn.isEmpty()) msg.append(" (").append(info.asn).append(")");
+            }
+            tIspDetalle.setTextColor(tema.muted);
+            tIspDetalle.setText(msg.toString());
+        }
+    }
+
+    void procesarCambioRedYDetectarIsp(Red r) {
+        if (r == null || r.redActiva == null || "Sin conexión".equals(r.conexion)) {
+            actualizarPanelIspUI(r);
+            return;
+        }
+        if (!r.claveRed.equals(ultimaClaveRedConectada)) {
+            ultimaClaveRedConectada = r.claveRed;
+            ispActual = null;
+            ispUltimoFallo = false;
+            ultimoIntentoIspMs = 0L;
+            proveedorEditadoManualmente = false;
+            aplicarIspAMedicion(null);
+            establecerProveedorUI(r.operador, false);
+            lanzarDeteccionIspAsync(r.claveRed, r.redActiva, true);
+        } else {
+            if (!proveedorEditadoManualmente && !r.operador.isEmpty() && !r.operador.equals(proveedorTexto)) {
+                establecerProveedorUI(r.operador, false);
+            }
+            boolean sinIsp = ispActual == null || !r.claveRed.equals(ispActual.claveRed);
+            boolean enCurso = r.claveRed.equals(ispClaveEnCurso);
+            long ahora = System.currentTimeMillis();
+            if (sinIsp && !enCurso && (!ispUltimoFallo || ahora - ultimoIntentoIspMs >= ISP_RETRY_MS)) {
+                lanzarDeteccionIspAsync(r.claveRed, r.redActiva, false);
+            }
+        }
+        actualizarPanelIspUI(r);
+    }
+
+    void redetectarIspManual() {
+        proveedorEditadoManualmente = false;
+        Red r = leerRed();
+        redActual = r;
+        if ("WiFi".equals(r.conexion) || "Cable".equals(r.conexion)) {
+            ispActual = null;
+            ispUltimoFallo = false;
+            r.operador = "";
+            aplicarIspAMedicion(null);
+            establecerProveedorUI("", false);
+            mostrarRed(r);
+            actualizarPanelIspUI(r);
+            lanzarDeteccionIspAsync(r.claveRed, r.redActiva, true);
+        } else if ("Datos móviles".equals(r.conexion)) {
+            establecerProveedorUI(r.operador, false);
+            mostrarRed(r);
+            actualizarPanelIspUI(r);
+            if (r.redActiva != null) {
+                lanzarDeteccionIspAsync(r.claveRed, r.redActiva, true);
+            }
+        } else {
+            establecerProveedorUI("", false);
+            mostrarRed(r);
+            actualizarPanelIspUI(r);
+        }
+        if (tieneResultadoMedicion) actualizarTextoResultados();
+    }
+
+    void lanzarDeteccionIspAsync(final String claveRed, final Network red, boolean forzar) {
+        if (red == null || claveRed == null || claveRed.isEmpty() || "Sin conexión".equals(claveRed)) return;
+        if (!forzar && claveRed.equals(ispClaveEnCurso)) return;
+        final long seq = ++ispIntentoSeq;
+        ispClaveEnCurso = claveRed;
+        ultimoIntentoIspMs = System.currentTimeMillis();
+        actualizarPanelIspUI(redActual);
+        new Thread(() -> {
+            InfoIsp encontrado = null;
+            try {
+                encontrado = detectarISPSincrono(claveRed, red);
+            } catch (Exception ignored) { }
+            final InfoIsp info = encontrado;
+            ui.post(() -> {
+                if (seq == ispIntentoSeq && claveRed.equals(ispClaveEnCurso)) {
+                    ispClaveEnCurso = null;
+                }
+                if (seq != ispIntentoSeq || !claveRed.equals(ultimaClaveRedConectada)) {
+                    actualizarPanelIspUI(redActual);
+                    return;
+                }
+                if (info != null) {
+                    ispActual = info;
+                    ispUltimoFallo = false;
+                    aplicarIspAMedicion(info);
+                    if (redActual != null && claveRed.equals(redActual.claveRed)) {
+                        if ("WiFi".equals(redActual.conexion) || "Cable".equals(redActual.conexion) || redActual.operador.isEmpty()) {
+                            redActual.operador = info.empresaNorm;
+                        }
+                        if (!proveedorEditadoManualmente) {
+                            String val = ("WiFi".equals(redActual.conexion) || "Cable".equals(redActual.conexion) || redActual.operador.isEmpty())
+                                    ? info.empresaNorm : redActual.operador;
+                            establecerProveedorUI(val, false);
+                        }
+                    }
+                    if (tieneResultadoMedicion) actualizarTextoResultados();
+                } else {
+                    ispUltimoFallo = true;
+                    ultimoIntentoIspMs = System.currentTimeMillis();
+                }
+                mostrarRed(redActual);
+                actualizarPanelIspUI(redActual);
+            });
+        }).start();
+    }
+
+    void aplicarIspAMedicion(InfoIsp info) {
+        synchronized (medicion) {
+            if (info == null) {
+                medicion.remove("isp_detectado");
+                medicion.remove("asn");
+                medicion.remove("ciudad");
+                medicion.remove("_ipLat");
+                medicion.remove("_ipLon");
+            } else {
+                medicion.put("isp_detectado", info.ispCrudo);
+                medicion.put("asn", info.asn);
+                medicion.put("ciudad", info.ciudad);
+                if (info.lat != null && info.lon != null) {
+                    medicion.put("_ipLat", info.lat);
+                    medicion.put("_ipLon", info.lon);
+                } else {
+                    medicion.remove("_ipLat");
+                    medicion.remove("_ipLon");
+                }
+            }
+        }
+    }
+
+    static String textoValidoJson(JSONObject o, String key) {
+        if (o == null || !o.has(key) || o.isNull(key)) return "";
+        String v = o.optString(key, "").trim();
+        return "null".equalsIgnoreCase(v) ? "" : v;
+    }
+
+    InfoIsp detectarISPSincrono(String claveRed, Network red) {
+        if (red == null || claveRed == null || claveRed.isEmpty() || "Sin conexión".equals(claveRed)) {
+            return null;
+        }
+        try {
+            InfoIsp r1 = consultarIpWhoIs(claveRed, red);
+            if (r1 != null) return r1;
         } catch (Exception ignored) { }
+        try {
+            InfoIsp r2 = consultarIpInfoIo(claveRed, red);
+            if (r2 != null) return r2;
+        } catch (Exception ignored) { }
+        try {
+            InfoIsp r3 = consultarIpApiCo(claveRed, red);
+            if (r3 != null) return r3;
+        } catch (Exception ignored) { }
+        return null;
+    }
+
+    InfoIsp consultarIpWhoIs(String claveRed, Network red) throws Exception {
+        JSONObject d = new JSONObject(leerTexto(IP_INFO_URL, red, 5000, 6000));
+        if (!d.optBoolean("success", true)) return null;
+        JSONObject c = d.optJSONObject("connection");
+        String ispCrudo = "";
+        String asn = "";
+        if (c != null) {
+            ispCrudo = textoValidoJson(c, "isp");
+            if (ispCrudo.isEmpty()) ispCrudo = textoValidoJson(c, "org");
+            int asnNum = c.optInt("asn", 0);
+            if (asnNum > 0) asn = "AS" + asnNum;
+        }
+        if (ispCrudo.isEmpty()) ispCrudo = textoValidoJson(d, "isp");
+        if (ispCrudo.isEmpty()) ispCrudo = textoValidoJson(d, "org");
+        if (ispCrudo.isEmpty()) return null;
+        String emp = normalizarIsp(ispCrudo);
+        String ciudad = textoValidoJson(d, "city");
+        Double lat = d.has("latitude") && !d.isNull("latitude") ? d.optDouble("latitude") : null;
+        Double lon = d.has("longitude") && !d.isNull("longitude") ? d.optDouble("longitude") : null;
+        if (lat != null && Double.isNaN(lat)) lat = null;
+        if (lon != null && Double.isNaN(lon)) lon = null;
+        return new InfoIsp(claveRed, ispCrudo, emp, asn, ciudad, lat, lon);
+    }
+
+    InfoIsp consultarIpInfoIo(String claveRed, Network red) throws Exception {
+        JSONObject d = new JSONObject(leerTexto(IP_INFO_FALLBACK_1, red, 5000, 6000));
+        if (d.has("error")) return null;
+        String org = textoValidoJson(d, "org");
+        if (org.isEmpty()) return null;
+        String asn = "";
+        String ispCrudo = org;
+        if (org.toUpperCase(Locale.ROOT).startsWith("AS")) {
+            int sp = org.indexOf(' ');
+            if (sp > 2) {
+                String pref = org.substring(0, sp).trim();
+                if (pref.substring(2).matches("\\d+")) {
+                    asn = pref.toUpperCase(Locale.ROOT);
+                    ispCrudo = org.substring(sp + 1).trim();
+                }
+            }
+        }
+        if (ispCrudo.isEmpty()) ispCrudo = org;
+        String emp = normalizarIsp(ispCrudo);
+        String ciudad = textoValidoJson(d, "city");
+        Double lat = null, lon = null;
+        String loc = textoValidoJson(d, "loc");
+        if (loc.contains(",")) {
+            String[] p = loc.split(",");
+            if (p.length == 2) {
+                try {
+                    lat = Double.parseDouble(p[0].trim());
+                    lon = Double.parseDouble(p[1].trim());
+                } catch (NumberFormatException ignored) { }
+            }
+        }
+        return new InfoIsp(claveRed, ispCrudo, emp, asn, ciudad, lat, lon);
+    }
+
+    InfoIsp consultarIpApiCo(String claveRed, Network red) throws Exception {
+        JSONObject d = new JSONObject(leerTexto(IP_INFO_FALLBACK_2, red, 5000, 6000));
+        if (d.optBoolean("error", false)) return null;
+        String ispCrudo = textoValidoJson(d, "org");
+        if (ispCrudo.isEmpty()) return null;
+        String asn = textoValidoJson(d, "asn").toUpperCase(Locale.ROOT);
+        if (!asn.isEmpty() && !asn.startsWith("AS")) asn = "AS" + asn;
+        String emp = normalizarIsp(ispCrudo);
+        String ciudad = textoValidoJson(d, "city");
+        Double lat = d.has("latitude") && !d.isNull("latitude") ? d.optDouble("latitude") : null;
+        Double lon = d.has("longitude") && !d.isNull("longitude") ? d.optDouble("longitude") : null;
+        if (lat != null && Double.isNaN(lat)) lat = null;
+        if (lon != null && Double.isNaN(lon)) lon = null;
+        return new InfoIsp(claveRed, ispCrudo, emp, asn, ciudad, lat, lon);
     }
 
     // ======================================================================
@@ -429,10 +887,28 @@ public class MainActivity extends Activity {
     interface Progreso { void en(double mbps); }
 
     static String leerTexto(String url) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-        c.setConnectTimeout(10000); c.setReadTimeout(15000);
-        try (InputStream in = c.getInputStream()) {
-            return new String(leerTodo(in), StandardCharsets.UTF_8);
+        return leerTexto(url, null, 10000, 15000);
+    }
+
+    static String leerTexto(String url, Network red, int connectMs, int readMs) throws Exception {
+        URL u = new URL(url);
+        HttpURLConnection c = (HttpURLConnection) (red != null ? red.openConnection(u) : u.openConnection());
+        c.setUseCaches(false);
+        c.setInstanceFollowRedirects(true);
+        c.setConnectTimeout(connectMs);
+        c.setReadTimeout(readMs);
+        c.setRequestProperty("User-Agent", "MedidorSenalUTN/2.0");
+        c.setRequestProperty("Accept", "application/json, text/plain, */*");
+        try {
+            int code = c.getResponseCode();
+            if (code < 200 || code >= 300) {
+                throw new IOException("HTTP " + code);
+            }
+            try (InputStream in = c.getInputStream()) {
+                return new String(leerTodo(in), StandardCharsets.UTF_8);
+            }
+        } finally {
+            c.disconnect();
         }
     }
 
@@ -541,59 +1017,133 @@ public class MainActivity extends Activity {
     // ======================================================================
     // Medición completa
     // ======================================================================
+    void actualizarTextoResultados() {
+        if (!tieneResultadoMedicion || tResultados == null) return;
+        String prov = resolverEmpresaFinal();
+        String lineaProv = prov.isEmpty() ? "—" : prov;
+        txtResultados = String.format(Locale.ROOT,
+                "Bajada   %.1f Mbps\nSubida   %.1f Mbps\nLatencia %.0f ms\nJitter   %.1f ms\nProveedor: %s\nUbicación: %s",
+                ultBaj, ultSub, ultLat, ultJit, lineaProv, ultUbic);
+        tResultados.setText(txtResultados);
+    }
+
+    String resolverEmpresaFinal() {
+        String empUi = eProveedor != null ? eProveedor.getText().toString().trim()
+                : (proveedorTexto == null ? "" : proveedorTexto.trim());
+        String empMed;
+        synchronized (medicion) {
+            Object o = medicion.get("empresa");
+            empMed = o == null ? "" : String.valueOf(o).trim();
+        }
+        String claveActual = redActual != null ? redActual.claveRed : "";
+        if (proveedorEditadoManualmente) return empUi;
+        if (medicionClaveRed.equals(claveActual) || empMed.isEmpty()) {
+            return !empUi.isEmpty() ? empUi : empMed;
+        }
+        return empMed;
+    }
+
     void medir() {
         if (midiendo) return;
         midiendo = true;
+        tieneResultadoMedicion = false;
         bMedir.setEnabled(false); bMedir.setText("Midiendo…");
         bEnviar.setEnabled(false); bCompartir.setEnabled(false);
         tResultados.setText("—"); tTeoria.setText("");
         new Thread(() -> {
             try {
-                Red r = leerRed();
+                final Red r = leerRed();
+                if (r.redActiva != null && !"Sin conexión".equals(r.conexion)
+                        && (ispActual == null || !r.claveRed.equals(ispActual.claveRed))) {
+                    fase("Detectando ISP…");
+                    final InfoIsp nuevo = detectarISPSincrono(r.claveRed, r.redActiva);
+                    if (nuevo != null) {
+                        ispActual = nuevo;
+                        ispUltimoFallo = false;
+                        if ("WiFi".equals(r.conexion) || "Cable".equals(r.conexion) || r.operador.isEmpty()) {
+                            r.operador = nuevo.empresaNorm;
+                        }
+                        ui.post(() -> {
+                            if (r.claveRed.equals(ultimaClaveRedConectada)) {
+                                if (redActual != null && r.claveRed.equals(redActual.claveRed)
+                                        && ("WiFi".equals(redActual.conexion) || "Cable".equals(redActual.conexion) || redActual.operador.isEmpty())) {
+                                    redActual.operador = nuevo.empresaNorm;
+                                }
+                                if (!proveedorEditadoManualmente) {
+                                    String val = ("WiFi".equals(r.conexion) || "Cable".equals(r.conexion) || r.operador.isEmpty())
+                                            ? nuevo.empresaNorm : r.operador;
+                                    establecerProveedorUI(val, false);
+                                }
+                                mostrarRed(redActual);
+                                actualizarPanelIspUI(redActual);
+                            }
+                        });
+                    } else {
+                        ispUltimoFallo = true;
+                        ultimoIntentoIspMs = System.currentTimeMillis();
+                    }
+                }
+
                 double[] lat = latencia();
                 double baj = bajada();
                 double sub = subida();
                 fase("Ubicación…");
                 Location loc = ubicar();
 
-                medicion.put("id", UUID.randomUUID().toString());
-                SimpleDateFormat iso = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT);
-                iso.setTimeZone(TimeZone.getTimeZone("UTC"));
-                medicion.put("fecha", iso.format(new Date()));
-                medicion.put("conexion", r.conexion);
-                medicion.put("tecnologia", r.tecnologia);
-                medicion.put("tipo_red_detectado", r.detalle);
-                medicion.put("empresa", r.operador);
-                medicion.put("senal_dbm", r.dbm);
-                medicion.put("barras", r.barras);
-                medicion.put("sinr_db", r.sinr == null ? null : Math.round(r.sinr * 10) / 10.0);
-                medicion.put("ancho_mhz", r.anchoMHz);
-                medicion.put("latencia_ms", Math.round(lat[0] * 10) / 10.0);
-                medicion.put("jitter_ms", Math.round(lat[1] * 10) / 10.0);
-                medicion.put("bajada_mbps", Math.round(baj * 100) / 100.0);
-                medicion.put("subida_mbps", Math.round(sub * 100) / 100.0);
+                InfoIsp ispValido = (ispActual != null && r.claveRed.equals(ispActual.claveRed)) ? ispActual : null;
+                aplicarIspAMedicion(ispValido);
+                String empresaInicial = obtenerProveedorEfectivo(r);
+                medicionClaveRed = r.claveRed;
+
                 String ubic;
-                if (loc != null) {
-                    medicion.put("lat", Math.round(loc.getLatitude() * 1e5) / 1e5);
-                    medicion.put("lon", Math.round(loc.getLongitude() * 1e5) / 1e5);
-                    medicion.put("precision_m", Math.round(loc.getAccuracy()));
-                    medicion.put("ubicacion_fuente", "GPS");
-                    ubic = "GPS ±" + Math.round(loc.getAccuracy()) + " m";
-                } else if (medicion.get("_ipLat") != null) {
-                    medicion.put("lat", medicion.get("_ipLat"));
-                    medicion.put("lon", medicion.get("_ipLon"));
-                    medicion.put("ubicacion_fuente", "IP (aprox.)");
-                    ubic = "aproximada por IP";
-                } else {
-                    ubic = "no disponible";
+                synchronized (medicion) {
+                    medicion.put("id", UUID.randomUUID().toString());
+                    SimpleDateFormat iso = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT);
+                    iso.setTimeZone(TimeZone.getTimeZone("UTC"));
+                    medicion.put("fecha", iso.format(new Date()));
+                    medicion.put("conexion", r.conexion);
+                    medicion.put("tecnologia", r.tecnologia);
+                    medicion.put("tipo_red_detectado", r.detalle);
+                    medicion.put("empresa", empresaInicial);
+                    medicion.put("senal_dbm", r.dbm);
+                    medicion.put("barras", r.barras);
+                    medicion.put("sinr_db", r.sinr == null ? null : Math.round(r.sinr * 10) / 10.0);
+                    medicion.put("ancho_mhz", r.anchoMHz);
+                    medicion.put("latencia_ms", Math.round(lat[0] * 10) / 10.0);
+                    medicion.put("jitter_ms", Math.round(lat[1] * 10) / 10.0);
+                    medicion.put("bajada_mbps", Math.round(baj * 100) / 100.0);
+                    medicion.put("subida_mbps", Math.round(sub * 100) / 100.0);
+                    if (loc != null) {
+                        medicion.put("lat", Math.round(loc.getLatitude() * 1e5) / 1e5);
+                        medicion.put("lon", Math.round(loc.getLongitude() * 1e5) / 1e5);
+                        medicion.put("precision_m", Math.round(loc.getAccuracy()));
+                        medicion.put("ubicacion_fuente", "GPS");
+                        ubic = "GPS ±" + Math.round(loc.getAccuracy()) + " m";
+                    } else if (ispValido != null && ispValido.lat != null && ispValido.lon != null) {
+                        medicion.put("lat", ispValido.lat);
+                        medicion.put("lon", ispValido.lon);
+                        medicion.remove("precision_m");
+                        medicion.put("ubicacion_fuente", "IP (aprox.)");
+                        ubic = "aproximada por IP";
+                    } else {
+                        medicion.remove("lat");
+                        medicion.remove("lon");
+                        medicion.remove("precision_m");
+                        medicion.remove("ubicacion_fuente");
+                        ubic = "no disponible";
+                    }
                 }
                 final String ubicTxt = ubic;
                 final Red rf = r;
                 ui.post(() -> {
                     velocidad(baj, "Mbps · resultado de bajada");
-                    tResultados.setText(String.format(Locale.ROOT,
-                            "Bajada   %.1f Mbps\nSubida   %.1f Mbps\nLatencia %.0f ms\nJitter   %.1f ms\nUbicación: %s",
-                            baj, sub, lat[0], lat[1], ubicTxt));
+                    ultBaj = baj;
+                    ultSub = sub;
+                    ultLat = lat[0];
+                    ultJit = lat[1];
+                    ultUbic = ubicTxt;
+                    tieneResultadoMedicion = true;
+                    actualizarTextoResultados();
                     tTeoria.setText(teoria(rf, baj));
                     bEnviar.setEnabled(true); bCompartir.setEnabled(true);
                 });
@@ -664,13 +1214,27 @@ public class MainActivity extends Activity {
     // ======================================================================
     void enviar() {
         if (!cConsentimiento.isChecked()) { estado("Para enviar tenés que aceptar el uso de los datos.", tema.bad); return; }
-        medicion.put("lugar", eLugar.getText().toString().trim());
-        medicion.put("comentario", eComentario.getText().toString().trim());
+        String empresaFinal = resolverEmpresaFinal();
+        if (empresaFinal.isEmpty()) {
+            estado("Ingresá o elegí el proveedor / ISP antes de registrar la medición.", tema.bad);
+            if (sv != null && eProveedor != null) {
+                sv.post(() -> {
+                    sv.smoothScrollTo(0, 0);
+                    eProveedor.requestFocus();
+                });
+            }
+            return;
+        }
         final String url = SCRIPT_URL_POR_DEFECTO;
         JSONObject j = new JSONObject();
-        try {
-            for (String c : CAMPOS) { Object v = medicion.get(c); j.put(c, v == null ? "" : v); }
-        } catch (Exception ignored) { }
+        synchronized (medicion) {
+            medicion.put("empresa", empresaFinal);
+            medicion.put("lugar", eLugar.getText().toString().trim());
+            medicion.put("comentario", eComentario.getText().toString().trim());
+            try {
+                for (String c : CAMPOS) { Object v = medicion.get(c); j.put(c, v == null ? "" : v); }
+            } catch (Exception ignored) { }
+        }
         guardarHistorial(j);
         bEnviar.setEnabled(false);
         new Thread(() -> {
@@ -804,6 +1368,7 @@ public class MainActivity extends Activity {
     void construirUI() {
         aplicarBarrasSistema();
 
+        String prevProveedor = eProveedor != null ? eProveedor.getText().toString() : proveedorTexto;
         String prevLugar = eLugar != null ? eLugar.getText().toString() : "";
         String prevCom = eComentario != null ? eComentario.getText().toString() : "";
         boolean prevConsent = cConsentimiento != null && cConsentimiento.isChecked();
@@ -813,6 +1378,9 @@ public class MainActivity extends Activity {
         LinearLayout raiz = new LinearLayout(this);
         raiz.setOrientation(LinearLayout.VERTICAL);
         raiz.setPadding(dp(16), dp(20), dp(16), dp(40));
+        raiz.setFocusable(true);
+        raiz.setFocusableInTouchMode(true);
+        raiz.requestFocus();
         sv.addView(raiz);
 
         // Cabecera institucional
@@ -874,6 +1442,102 @@ public class MainActivity extends Activity {
         LinearLayout cRed = tarjeta(panelMedidor, "Enlace de radiofrecuencia en vivo");
         tRed = texto(txtRed, 16, tema.fg, false); tRed.setLineSpacing(0, 1.15f); cRed.addView(tRed);
 
+        View divIsp = new View(this);
+        divIsp.setBackgroundColor(tema.line);
+        LinearLayout.LayoutParams lpDivIsp = new LinearLayout.LayoutParams(-1, Math.max(1, dp(1)));
+        lpDivIsp.topMargin = dp(12);
+        lpDivIsp.bottomMargin = dp(10);
+        cRed.addView(divIsp, lpDivIsp);
+
+        tIspLabel = texto("PROVEEDOR / ISP (EDITABLE)", 11, tema.muted, true);
+        tIspLabel.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tIspLabel.setLetterSpacing(0.08f);
+        cRed.addView(tIspLabel);
+
+        LinearLayout filaIsp = new LinearLayout(this);
+        filaIsp.setOrientation(LinearLayout.HORIZONTAL);
+        filaIsp.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams lpFilaIsp = new LinearLayout.LayoutParams(-1, -2);
+        lpFilaIsp.topMargin = dp(6);
+
+        eProveedor = campo("Escribí o verificá el proveedor / ISP");
+        eProveedor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        eProveedor.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        establecerProveedorUI(prevProveedor, false);
+        eProveedor.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (actualizandoProveedorUi) return;
+                proveedorTexto = s.toString();
+                proveedorEditadoManualmente = true;
+                actualizarEstilosChips();
+                mostrarRed(redActual);
+                actualizarPanelIspUI(redActual);
+                if (tieneResultadoMedicion) actualizarTextoResultados();
+            }
+        });
+        filaIsp.addView(eProveedor, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        bRedetectarIsp = new Button(this);
+        bRedetectarIsp.setText("↻");
+        bRedetectarIsp.setAllCaps(false);
+        bRedetectarIsp.setTextSize(18);
+        bRedetectarIsp.setTypeface(Typeface.DEFAULT_BOLD);
+        bRedetectarIsp.setTextColor(tema.fg);
+        bRedetectarIsp.setBackground(fondo(tema.surfaceAlt, tema.lineStrong, 8));
+        bRedetectarIsp.setPadding(0, 0, 0, 0);
+        bRedetectarIsp.setMinWidth(0);
+        bRedetectarIsp.setMinimumWidth(0);
+        bRedetectarIsp.setMinHeight(0);
+        bRedetectarIsp.setMinimumHeight(0);
+        bRedetectarIsp.setContentDescription("Re-detectar ISP automáticamente");
+        bRedetectarIsp.setOnClickListener(v -> redetectarIspManual());
+        LinearLayout.LayoutParams lpBtnIsp = new LinearLayout.LayoutParams(dp(44), dp(44));
+        lpBtnIsp.leftMargin = dp(8);
+        filaIsp.addView(bRedetectarIsp, lpBtnIsp);
+        cRed.addView(filaIsp, lpFilaIsp);
+
+        HorizontalScrollView scrollChips = new HorizontalScrollView(this);
+        scrollChips.setHorizontalScrollBarEnabled(false);
+        LinearLayout.LayoutParams lpScrollChips = new LinearLayout.LayoutParams(-1, -2);
+        lpScrollChips.topMargin = dp(8);
+        LinearLayout rowChips = new LinearLayout(this);
+        rowChips.setOrientation(LinearLayout.HORIZONTAL);
+        chipsProveedor.clear();
+        for (int i = 0; i < PROVEEDORES_RAPIDOS.length; i++) {
+            final String prov = PROVEEDORES_RAPIDOS[i];
+            Button chip = new Button(this);
+            chip.setText(prov);
+            chip.setAllCaps(false);
+            chip.setTextSize(12);
+            chip.setMinHeight(0);
+            chip.setMinimumHeight(0);
+            chip.setMinWidth(0);
+            chip.setMinimumWidth(0);
+            chip.setPadding(dp(12), dp(6), dp(12), dp(6));
+            chip.setOnClickListener(v -> {
+                proveedorEditadoManualmente = true;
+                establecerProveedorUI(prov, true);
+                mostrarRed(redActual);
+                actualizarPanelIspUI(redActual);
+                if (tieneResultadoMedicion) actualizarTextoResultados();
+            });
+            LinearLayout.LayoutParams lpChip = new LinearLayout.LayoutParams(-2, -2);
+            if (i < PROVEEDORES_RAPIDOS.length - 1) lpChip.rightMargin = dp(6);
+            rowChips.addView(chip, lpChip);
+            chipsProveedor.add(chip);
+        }
+        scrollChips.addView(rowChips);
+        cRed.addView(scrollChips, lpScrollChips);
+
+        tIspDetalle = texto("", 12, tema.muted, false);
+        tIspDetalle.setTypeface(Typeface.MONOSPACE);
+        LinearLayout.LayoutParams lpIspDet = new LinearLayout.LayoutParams(-1, -2);
+        lpIspDet.topMargin = dp(6);
+        cRed.addView(tIspDetalle, lpIspDet);
+
         LinearLayout cMed = tarjeta(panelMedidor, "Instrumento de medición");
         tVelocidad = texto(txtVelocidad, 56, tema.fg, true);
         tVelocidad.setTypeface(Typeface.MONOSPACE, Typeface.BOLD); tVelocidad.setGravity(Gravity.CENTER);
@@ -930,6 +1594,8 @@ public class MainActivity extends Activity {
         panelEstadisticas.addView(estadisticasPanel.construir(tema));
         raiz.addView(panelEstadisticas);
 
+        actualizarPanelIspUI(redActual);
+        actualizarEstilosChips();
         setContentView(sv);
     }
 }
